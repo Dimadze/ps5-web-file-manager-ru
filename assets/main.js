@@ -212,7 +212,6 @@ function applyStaticText() {
   parentBtn.setAttribute("aria-label", t("parent"));
   versionEl.textContent = APP_VERSION;
   updateNameFilterButton();
-  if (initLoadingEl) initLoadingEl.hidden = true;
 }
 
 function nextPaint() {
@@ -459,7 +458,7 @@ function formatTime(seconds) {
   const time = [date.getHours(), date.getMinutes(), date.getSeconds()]
     .map(value => value < 10 ? "0" + value : value).join(":");
   return document.documentElement.lang === "en" ?
-    month + "/" + day + "/" + year + ", " + time :
+    month + "/" + day + "/" + year + " " + time :
     year + "/" + month + "/" + day + " " + time;
 }
 
@@ -866,7 +865,6 @@ async function refreshSpaces() {
       await load("/", undefined, true, true, "replace");
     }
   } catch (err) {
-    spaceInfoEl.textContent = "";
     renderAddressPath();
   }
 }
@@ -1812,7 +1810,6 @@ function updateButtons() {
   }
   document.getElementById("copyBtn").disabled = locked || items.length === 0;
   document.getElementById("moveBtn").disabled = locked || items.length === 0;
-  document.getElementById("renameBtn").disabled = locked || items.length !== 1;
   document.getElementById("deleteBtn").disabled = locked || items.length === 0;
   downloadBtn.disabled = locked || items.length === 0;
   document.getElementById("refreshBtn").disabled = locked;
@@ -1821,7 +1818,7 @@ function updateButtons() {
   uploadFolderBtn.disabled = locked;
   document.getElementById("mkdirBtn").disabled = locked;
   newTextBtn.disabled = locked;
-  for (const button of filesEl.querySelectorAll(".row-action, .mode-action")) {
+  for (const button of filesEl.querySelectorAll(".row-action, .mode-action, .row-tool")) {
     button.disabled = locked || (/^smb:\/\//.test(cwd) && button.classList.contains("mode-action"));
   }
   for (const checkbox of filesEl.querySelectorAll(".select-cell input")) checkbox.disabled = locked;
@@ -1966,6 +1963,16 @@ function clearSelection(updateVisibleRows) {
   updateButtons();
 }
 
+const FILE_ACTIONS = { download: actionDownload, copy: actionCopy, move: actionMove, rename: actionRename, delete: actionDelete };
+
+function runRowAction(item, action) {
+  if (busy || loadingPath || contentEl.classList.contains("loading")) return;
+  clearSelection();
+  togglePath(item.path, true);
+  focusPath(item.path);
+  action();
+}
+
 function render() {
   hoveredRow = null;
   filesEl.innerHTML = "";
@@ -1973,6 +1980,7 @@ function render() {
   emptyEl.hidden = visible.length !== 0;
   emptyEl.textContent = entries.length ? t("noMatches") : t("empty");
   const fragment = document.createDocumentFragment();
+  const actions = Object.keys(FILE_ACTIONS).filter(op => op !== "download" || !isPlayStationBrowser());
 
   for (const item of visible) {
     const tr = document.createElement("tr");
@@ -2012,7 +2020,26 @@ function render() {
     iconImg.alt = "";
     nameBtn.appendChild(iconImg);
     nameBtn.appendChild(nameText);
-    nameTd.appendChild(nameBtn);
+    const nameCell = document.createElement("div");
+    nameCell.className = "file-name-cell";
+    nameCell.appendChild(nameBtn);
+    const tools = document.createElement("span");
+    tools.className = "row-tools";
+    for (const op of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "row-tool";
+      button.dataset.action = op;
+      button.title = t(op);
+      button.setAttribute("aria-label", t(op) + ": " + displayName(item));
+      const icon = document.createElement("img");
+      icon.src = "/icon-" + op + ".png";
+      icon.alt = "";
+      button.appendChild(icon);
+      tools.appendChild(button);
+    }
+    nameCell.appendChild(tools);
+    nameTd.appendChild(nameCell);
 
     const modeTd = document.createElement("td");
     modeTd.className = "mode-col";
@@ -2887,15 +2914,14 @@ document.getElementById("mkdirBtn").addEventListener("click", () => {
   if (!name) return;
   runImmediateAction(t("mkdir"), () => api("/api/mkdir", { path, name }));
 });
-document.getElementById("copyBtn").addEventListener("click", actionCopy);
-document.getElementById("moveBtn").addEventListener("click", actionMove);
+for (const op of Object.keys(FILE_ACTIONS)) {
+  const button = document.getElementById(op + "Btn");
+  if (button) button.addEventListener("click", FILE_ACTIONS[op]);
+}
 pasteBtn.addEventListener("click", actionPaste);
 installPkgBtn.addEventListener("click", actionInstallSelectedPkgs);
 extractBtn.addEventListener("click", actionExtractSelected);
 clearClipboardBtn.addEventListener("click", clearClipboard);
-document.getElementById("renameBtn").addEventListener("click", actionRename);
-downloadBtn.addEventListener("click", actionDownload);
-document.getElementById("deleteBtn").addEventListener("click", actionDelete);
 uploadBtn.addEventListener("click", actionUploadFiles);
 uploadMenuBtn.addEventListener("click", toggleUploadMenu);
 uploadFolderBtn.addEventListener("click", actionUploadFolder);
@@ -3003,7 +3029,14 @@ document.addEventListener("click", event => {
   if (!uploadMenuEl || uploadMenuEl.contains(event.target)) return;
   uploadMenuEl.classList.remove("open");
 });
+document.addEventListener("mousedown", () => {
+  document.body.classList.remove("keyboard-navigation");
+}, true);
 document.addEventListener("keydown", event => {
+  if (event.key === "Tab" || event.keyCode === 9 ||
+      (event.keyCode >= 37 && event.keyCode <= 40)) {
+    document.body.classList.add("keyboard-navigation");
+  }
   if (!smbManagerOverlayEl.hidden && (event.key === "Tab" || event.keyCode === 9)) {
     const buttons = smbManagerOverlayEl.querySelectorAll("button:not(:disabled)");
     if (!buttons.length) { event.preventDefault(); return; }
@@ -3079,7 +3112,8 @@ filesEl.addEventListener("click", event => {
   const row = findRowFromTarget(event.target);
   if (!row) return;
   let target = event.target;
-  while (target && target !== row && !target.classList.contains("row-action")) target = target.parentNode;
+  while (target && target !== row && !target.classList.contains("row-action") &&
+      !target.classList.contains("row-tool")) target = target.parentNode;
   if (target === row) return;
   const item = {
     path: row.dataset.path,
@@ -3087,6 +3121,12 @@ filesEl.addEventListener("click", event => {
     type: row.dataset.type,
     displayName: decodeFsText(row.dataset.name)
   };
+  if (target.classList.contains("row-tool")) {
+    event.preventDefault();
+    event.stopPropagation();
+    runRowAction(item, FILE_ACTIONS[target.dataset.action]);
+    return;
+  }
   focusPath(item.path);
   if (item.type === "d") {
     setTimeout(async () => {
@@ -3120,6 +3160,7 @@ selectAllEl.addEventListener("change", async () => {
   if (useLoading) hideContentLoading();
 });
 contentEl.addEventListener("mousemove", event => {
+  document.body.classList.remove("keyboard-navigation");
   hoverRow(findRowFromTarget(event.target));
 });
 contentEl.addEventListener("mouseleave", () => hoverRow(null));
@@ -3142,7 +3183,8 @@ async function init() {
   renderAddressPath();
   taskRefreshPath = savedPath;
   seedHistoryPath(cwd);
-  refreshSpaces();
+  await refreshSpaces();
+  if (initLoadingEl) initLoadingEl.hidden = true;
   await pollTasks();
   if (busy) {
     setStatus(t("activeTask"));

@@ -405,6 +405,10 @@ button.install-action:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+.paste-count:empty {
+  display: none;
+}
+
 .content {
   position: relative;
   flex: 1 1 auto;
@@ -644,7 +648,7 @@ th.size-col {
 }
 
 .time-col {
-  width: 225px;
+  width: 245px;
   text-align: center;
 }
 
@@ -746,6 +750,57 @@ input[type="checkbox"] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-name-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.file-name-cell > .row-action {
+  flex: 1;
+}
+
+.row-tools {
+  display: none;
+  align-items: center;
+  flex: none;
+  padding-right: 12px;
+}
+
+tr.hovered .row-tools,
+.keyboard-navigation .file-name-cell:focus-within .row-tools {
+  display: flex;
+}
+
+.row-tool {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.row-tool:hover:not(:disabled) img,
+.row-tool:focus img {
+  -webkit-filter: brightness(1.4);
+  filter: brightness(1.4);
+}
+
+.row-tool img {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+@media (hover: none) {
+  .row-tools {
+    display: flex;
+  }
 }
 
 .empty {
@@ -1659,6 +1714,23 @@ input[type="checkbox"] {
 
   .row-action {
     padding: 10px 12px;
+  }
+
+  .row-tools {
+    padding-right: 6px;
+  }
+
+  .row-tool {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 8px;
+  }
+
+  .row-tool img {
+    width: 18px;
+    height: 18px;
   }
 
   input[type="checkbox"] {

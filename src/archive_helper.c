@@ -99,7 +99,10 @@ send_all(int fd, const void *data, size_t size) {
   while(done < size) {
     ssize_t n = send(fd, p + done, size - done, MSG_NOSIGNAL);
     if(n < 0 && errno == EINTR) continue;
-    if(n <= 0) return -1;
+    if(n <= 0) {
+      if(!n) errno = EPIPE;
+      return -1;
+    }
     done += (size_t)n;
   }
   return 0;
@@ -244,12 +247,14 @@ archive_helper_send_elf(const char *path) {
   int error;
   size_t header_size = 0;
   off_t remaining;
+  const char *stage = "open ELF";
 
   if(!path) {
     errno = EINVAL;
     return -1;
   }
-  if((file_fd = open(path, O_RDONLY)) < 0) return -1;
+  if((file_fd = open(path, O_RDONLY)) < 0) goto done;
+  stage = "validate ELF";
   if(fstat(file_fd, &st)) goto done;
   if(!S_ISREG(st.st_mode) || st.st_size < 4 ||
      st.st_size > WFM_MAX_ELF_SIZE) {
@@ -267,7 +272,9 @@ archive_helper_send_elf(const char *path) {
     errno = ENOEXEC;
     goto done;
   }
+  stage = "rewind ELF";
   if(lseek(file_fd, 0, SEEK_SET) < 0) goto done;
+  stage = "connect to ELF loader at 127.0.0.1:9021";
   if((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) goto done;
   setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
   memset(&address, 0, sizeof(address));
@@ -278,12 +285,14 @@ archive_helper_send_elf(const char *path) {
 
   remaining = st.st_size;
   while(remaining > 0) {
+    stage = "read ELF";
     size_t size = remaining < (off_t)sizeof(buffer) ?
       (size_t)remaining : sizeof(buffer);
     ssize_t count = read(file_fd, buffer, size);
     if(count < 0 && errno == EINTR) continue;
     if(count < 0) goto done;
     if(!count) { errno = EIO; goto done; }
+    stage = "send ELF to loader";
     if(send_all(socket_fd, buffer, (size_t)count)) goto done;
     remaining -= count;
   }
@@ -292,6 +301,11 @@ archive_helper_send_elf(const char *path) {
 
 done:
   error = errno;
+#if WFM_DEBUG
+  if(result) fprintf(stderr, "ELF launch: %s: %s: %s\n", path, stage, strerror(error));
+#else
+  (void)stage;
+#endif
   if(socket_fd >= 0) close(socket_fd);
   if(file_fd >= 0) close(file_fd);
   errno = error;
@@ -306,9 +320,30 @@ archive_helper_autostart(void) {
 #else
   /* Never replace a connected daemon, even if it is temporarily slow. */
   int probe = archive_helper_probe();
-  if(probe == 0 || probe == -2) return 0;
-  if(access(WFM_HELPER_ELF, F_OK)) return errno == ENOENT ? 0 : -1;
-  return archive_helper_send_elf(WFM_HELPER_ELF);
+  if(probe == 0) {
+    puts("7zip helper: already running");
+    return 0;
+  }
+  if(probe == -2) {
+    fprintf(stderr, "7zip helper: socket connected but no valid PONG; keeping existing process\n");
+    errno = EBUSY;
+    return -1;
+  }
+  printf("7zip helper: launching %s via 127.0.0.1:9021\n", WFM_HELPER_ELF);
+  /* Use the actual open/read result; access() checks real rather than effective credentials. */
+  if(archive_helper_send_elf(WFM_HELPER_ELF)) return errno == ENOENT ? 0 : -1;
+  for(int i = 0; i < 50; i++) {
+    usleep(100000);
+    probe = archive_helper_probe();
+    if(probe == 0) {
+      puts("7zip helper: ready");
+      return 0;
+    }
+    if(probe == -2) break;
+  }
+  fprintf(stderr, "7zip helper: ELF sent, but helper did not become ready\n");
+  errno = ETIMEDOUT;
+  return -1;
 #endif
 }
 

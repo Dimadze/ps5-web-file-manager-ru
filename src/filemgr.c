@@ -60,7 +60,9 @@ navigate_to_home(void) {
   (void)sceUserServiceInitialize(&priority);
   module = sceKernelLoadStartModule(module_path, 0, NULL, 0, NULL, NULL);
   if(module < 0) {
+#if WFM_DEBUG
     printf("load libSceShellUIUtil: 0x%08X\n", (unsigned int)module);
+#endif
     return module;
   }
   initialize = (void *)kernel_dynlib_dlsym(
@@ -68,21 +70,29 @@ navigate_to_home(void) {
   launch_by_uri = (void *)kernel_dynlib_dlsym(
     -1, (uint32_t)module, "sceShellUIUtilLaunchByUri");
   if(!initialize || !launch_by_uri) {
+#if WFM_DEBUG
     printf("resolve libSceShellUIUtil URI functions failed\n");
+#endif
     return -1;
   }
 
   result = initialize();
   if(result < 0) {
+#if WFM_DEBUG
     printf("sceShellUIUtilInitialize: 0x%08X\n", (unsigned int)result);
+#endif
   }
   result = sceUserServiceGetForegroundUser((int *)&param.user_id);
   if(result < 0) {
+#if WFM_DEBUG
     printf("sceUserServiceGetForegroundUser: 0x%08X\n",
            (unsigned int)result);
+#endif
   }
   result = launch_by_uri(uri, &param);
+#if WFM_DEBUG
   printf("sceShellUIUtilLaunchByUri: 0x%08X\n", (unsigned int)result);
+#endif
   return result;
 }
 #endif

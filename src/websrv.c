@@ -240,7 +240,10 @@ websrv_listen(unsigned short port) {
   g_listen_fd = srvfd;
 
   if(!(httpd = MHD_start_daemon(MHD_USE_THREAD_PER_CONNECTION | MHD_USE_ITC |
-                                MHD_USE_NO_LISTEN_SOCKET | MHD_USE_DEBUG |
+#if WFM_DEBUG
+                                MHD_USE_DEBUG |
+#endif
+                                MHD_USE_NO_LISTEN_SOCKET |
                                 MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_TURBO,
                                 0, NULL, NULL, &websrv_on_request, NULL,
                                 MHD_OPTION_CONNECTION_MEMORY_LIMIT,
@@ -257,13 +260,17 @@ websrv_listen(unsigned short port) {
   while(!g_stop_requested) {
     addr_len = sizeof(client_addr);
     if((connfd = accept(srvfd, (struct sockaddr *)&client_addr, &addr_len)) < 0) {
+#if WFM_DEBUG
       if(!g_stop_requested) perror("accept");
+#endif
       break;
     }
     websrv_tune_connection_socket(connfd);
     if(MHD_add_connection(httpd, connfd, (struct sockaddr *)&client_addr,
                           addr_len) != MHD_YES) {
+#if WFM_DEBUG
       perror("MHD_add_connection");
+#endif
       close(connfd);
       break;
     }
