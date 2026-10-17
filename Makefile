@@ -13,7 +13,7 @@ ifeq ($(MAKECMDGOALS),)
   endif
 endif
 
-VERSION_TAG := v1.10
+VERSION_TAG := v1.11
 TITLE_ID    := FMGR88888
 PYTHON      ?= python3
 CMAKE       ?= cmake
@@ -88,7 +88,7 @@ gen/%.c: assets/% gen-asset-module.py | gen
 $(BIN): $(PS5_BUILD_BIN) force-ps5-copy
 	cp $< $@
 
-$(PS5_BUILD_BIN): $(PS5_SRCS) $(HEADERS) $(GEN_SRCS) Makefile $(SMB2_PS5_LIB)
+$(PS5_BUILD_BIN): $(PS5_SRCS) $(HEADERS) $(GEN_SRCS) assets/icon0.png assets/param.json Makefile $(SMB2_PS5_LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.c,$^) $(SMB2_PS5_LIB) $(LDADD)
 	$(STRIP) $@

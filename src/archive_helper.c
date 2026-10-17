@@ -16,6 +16,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "vfs.h"
+
 #define WFM_HEADER_SIZE 20U
 #define WFM_MAX_PAYLOAD (1024U * 1024U)
 #define WFM_MAX_PATH_PAYLOAD (256U * 1024U)
@@ -239,19 +241,29 @@ archive_helper_send_elf(const char *path) {
   int file_fd = -1;
   int socket_fd = -1;
   int result = -1;
+  int error;
+  size_t header_size = 0;
+  off_t remaining;
 
   if(!path) {
     errno = EINVAL;
     return -1;
   }
-  if(stat(path, &st)) return -1;
+  if((file_fd = open(path, O_RDONLY)) < 0) return -1;
+  if(fstat(file_fd, &st)) goto done;
   if(!S_ISREG(st.st_mode) || st.st_size < 4 ||
      st.st_size > WFM_MAX_ELF_SIZE) {
     errno = ENOEXEC;
-    return -1;
+    goto done;
   }
-  if((file_fd = open(path, O_RDONLY)) < 0) return -1;
-  if(read(file_fd, buffer, 4) != 4 || memcmp(buffer, "\x7f" "ELF", 4)) {
+  while(header_size < 4) {
+    ssize_t count = read(file_fd, buffer + header_size, 4 - header_size);
+    if(count < 0 && errno == EINTR) continue;
+    if(count < 0) goto done;
+    if(!count) { errno = ENOEXEC; goto done; }
+    header_size += (size_t)count;
+  }
+  if(memcmp(buffer, "\x7f" "ELF", 4)) {
     errno = ENOEXEC;
     goto done;
   }
@@ -264,19 +276,25 @@ archive_helper_send_elf(const char *path) {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   if(connect(socket_fd, (struct sockaddr *)&address, sizeof(address))) goto done;
 
-  while(1) {
-    ssize_t count = read(file_fd, buffer, sizeof(buffer));
+  remaining = st.st_size;
+  while(remaining > 0) {
+    size_t size = remaining < (off_t)sizeof(buffer) ?
+      (size_t)remaining : sizeof(buffer);
+    ssize_t count = read(file_fd, buffer, size);
     if(count < 0 && errno == EINTR) continue;
     if(count < 0) goto done;
-    if(!count) break;
+    if(!count) { errno = EIO; goto done; }
     if(send_all(socket_fd, buffer, (size_t)count)) goto done;
+    remaining -= count;
   }
   shutdown(socket_fd, SHUT_WR);
   result = 0;
 
 done:
+  error = errno;
   if(socket_fd >= 0) close(socket_fd);
   if(file_fd >= 0) close(file_fd);
+  errno = error;
   return result;
 #endif
 }

@@ -1,6 +1,7 @@
 #include "filemgr_internal.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,6 +79,12 @@ api_list(struct MHD_Connection *conn) {
                   (long long)st.st_size, (long long)st.st_mtime);
   }
 
+  if(wfm_dir_error(dir)) {
+    closedir(dir);
+    free(path);
+    free(b.data);
+    return send_json_error(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, NULL);
+  }
   closedir(dir);
   free(path);
   strbuf_append(&b, "]}");

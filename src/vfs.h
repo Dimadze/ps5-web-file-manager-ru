@@ -17,6 +17,8 @@ int wfm_fstat(int fd, struct stat *st);
 int wfm_statvfs(const char *path, struct statvfs *st);
 wfm_dir_t *wfm_opendir(const char *path);
 struct dirent *wfm_readdir(wfm_dir_t *dir);
+/* Sticky enumeration error; EOF leaves this at zero. */
+int wfm_dir_error(wfm_dir_t *dir);
 int wfm_closedir(wfm_dir_t *dir);
 int wfm_open(const char *path, int flags, ...);
 int wfm_close(int fd);

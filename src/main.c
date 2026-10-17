@@ -132,7 +132,6 @@ main(int argc, char **argv) {
   if(archive_helper_autostart()) {
     perror("start wfm-7zip-helper");
   }
-  app_install_if_needed();
 #endif
   filemgr_recover_extract_tasks();
 

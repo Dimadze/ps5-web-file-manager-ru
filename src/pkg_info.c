@@ -40,6 +40,7 @@ typedef enum pkg_param_type {
 
 typedef struct pkg_source {
   int fd;
+  int borrowed;
   uint64_t size;
   uint32_t content_type;
   uint32_t content_flags;
@@ -128,12 +129,12 @@ pkg_icon_is_png(const pkg_source_t *pkg, uint64_t offset, uint32_t size) {
 
 static void
 pkg_source_close(pkg_source_t *pkg) {
-  if(pkg->fd >= 0) close(pkg->fd);
+  if(pkg->fd >= 0 && !pkg->borrowed) close(pkg->fd);
   pkg->fd = -1;
 }
 
 static int
-pkg_source_open(const char *path, pkg_source_t *pkg) {
+pkg_source_open_fd(int fd, int borrowed, pkg_source_t *pkg) {
   unsigned char header[PKG_HEADER_SIZE];
   unsigned char *table = NULL;
   struct stat st;
@@ -146,8 +147,9 @@ pkg_source_open(const char *path, pkg_source_t *pkg) {
   int ret = -1;
 
   memset(pkg, 0, sizeof(*pkg));
-  pkg->fd = -1;
-  if((pkg->fd = open(path, O_RDONLY)) < 0 || fstat(pkg->fd, &st) ||
+  pkg->fd = fd;
+  pkg->borrowed = borrowed;
+  if(pkg->fd < 0 || fstat(pkg->fd, &st) ||
      !S_ISREG(st.st_mode) || st.st_size < PKG_HEADER_SIZE ||
      read_at(pkg->fd, header, sizeof(header), 0)) goto done;
 
@@ -222,6 +224,11 @@ done:
     pkg_source_close(pkg);
   }
   return ret;
+}
+
+static int
+pkg_source_open(const char *path, pkg_source_t *pkg) {
+  return pkg_source_open_fd(open(path, O_RDONLY), 0, pkg);
 }
 
 static int
@@ -655,17 +662,17 @@ api_pkg_info(struct MHD_Connection *conn) {
 }
 
 enum MHD_Result
-pkg_icon_response(struct MHD_Connection *conn, const char *path) {
+pkg_icon_response_fd(struct MHD_Connection *conn, int fd) {
   pkg_source_t pkg = {.fd = -1};
   unsigned char *icon = NULL;
   struct MHD_Response *response;
   enum MHD_Result ret;
 
-  if(!path || pkg_source_open(path, &pkg) || !pkg.icon_size ||
+  if(pkg_source_open_fd(fd, 1, &pkg) || !pkg.icon_size ||
      !(icon = malloc(pkg.icon_size)) ||
      read_at(pkg.fd, icon, pkg.icon_size, pkg.icon_offset)) {
     free(icon);
-    if(path && pkg.fd >= 0) pkg_source_close(&pkg);
+    if(pkg.fd >= 0) pkg_source_close(&pkg);
     return send_json_error(conn, MHD_HTTP_NOT_FOUND, "package icon not found");
   }
   if(!png_signature_valid(icon, pkg.icon_size)) {
@@ -686,6 +693,14 @@ pkg_icon_response(struct MHD_Connection *conn, const char *path) {
   ret = websrv_queue_response(conn, MHD_HTTP_OK, response);
   MHD_destroy_response(response);
   return ret;
+}
+
+enum MHD_Result
+pkg_icon_response(struct MHD_Connection *conn, const char *path) {
+  int fd = path ? open(path, O_RDONLY) : -1;
+  enum MHD_Result result = pkg_icon_response_fd(conn, fd);
+  if(fd >= 0) close(fd);
+  return result;
 }
 
 enum MHD_Result

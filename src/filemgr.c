@@ -181,16 +181,14 @@ task_set_total(file_task_t *task, unsigned long long total) {
 }
 
 static void
-task_finish_bytes(file_task_t *task, const char *current) {
+task_set_cleanup_stage(file_task_t *task, const char *current) {
   pthread_mutex_lock(&g_tasks_lock);
   task->state = TASK_RUNNING;
   if(current) {
     snprintf(task->current, sizeof(task->current), "%s", current);
   }
-  if(task->total) {
-    task->done = task->total;
-  }
   task->speed = 0;
+  task->eta = 0;
   task->updated_at = time(NULL);
   pthread_mutex_unlock(&g_tasks_lock);
 }
@@ -308,6 +306,7 @@ count_dir_bytes_sync(file_task_t *task, const char *path, const char *display,
       goto done;
     }
   }
+  if(wfm_dir_error(dir)) goto done;
   ret = 0;
 done:
   closedir(dir);
@@ -510,6 +509,7 @@ check_remove_dir_writable(file_task_t *task, const char *path) {
       goto done;
     }
   }
+  if(wfm_dir_error(dir)) goto done;
   ret = 0;
 done:
   closedir(dir);
@@ -541,10 +541,10 @@ static int
 finish_copied_move(file_task_t *task, const char *src) {
   int ret;
 
-  task_finish_bytes(task, "checking source permissions");
+  task_set_cleanup_stage(task, "checking source permissions");
   ret = check_remove_path_writable(task, src);
   if(!ret) {
-    task_finish_bytes(task, "removing source");
+    task_set_cleanup_stage(task, "removing source");
     ret = remove_path(task, src);
   }
   return ret;
@@ -585,6 +585,7 @@ copy_dir(file_task_t *task, const char *src, const char *dst) {
     }
   }
 
+  if(wfm_dir_error(dir)) goto done;
   ret = 0;
 done:
   closedir(dir);
@@ -671,6 +672,10 @@ remove_path(file_task_t *task, const char *path) {
         closedir(dir);
         return -1;
       }
+    }
+    if(wfm_dir_error(dir)) {
+      closedir(dir);
+      return -1;
     }
     closedir(dir);
     return rmdir(path);
@@ -1024,9 +1029,6 @@ task_worker(void *arg) {
         break;
       }
       ret = move_path(task, task->srcs[i], target);
-      if(!ret && task->src_count == 1) {
-        task_update(task, TASK_RUNNING, target, total, NULL);
-      }
     }
   } else if(task->op == TASK_DELETE) {
     size_t i;
@@ -1514,6 +1516,10 @@ chmod_task_path(file_task_t *task, const char *path,
         return -1;
       }
     }
+    if(wfm_dir_error(dir)) {
+      closedir(dir);
+      return -1;
+    }
     closedir(dir);
   }
   task_update(task, TASK_RUNNING, path, 0, NULL);
@@ -1532,7 +1538,8 @@ api_launch_elf(struct MHD_Connection *conn, const char *body,
   struct stat st;
   enum MHD_Result result;
 
-  if(!path || path[0] != '/' || !extension || strcasecmp(extension, ".elf")) {
+  if(!path || (path[0] != '/' && !smb_path(path)) ||
+     !extension || strcasecmp(extension, ".elf")) {
     free(path);
     return send_json_error_detail(conn, MHD_HTTP_BAD_REQUEST,
                                   "file is not an ELF payload",
@@ -1597,6 +1604,11 @@ api_extract(struct MHD_Connection *conn, const char *body, size_t body_size) {
   }
   separate = !strcmp(separate_text, "1");
   overwrite = overwrite_text && !strcmp(overwrite_text, "1");
+  if(smb_path(destination)) {
+    result = send_json_error(conn, MHD_HTTP_BAD_REQUEST,
+                             "archive extraction requires local storage");
+    goto done;
+  }
   if(destination[0] != '/') {
     result = send_json_error(conn, MHD_HTTP_BAD_REQUEST, "invalid path");
     goto done;
@@ -1620,6 +1632,11 @@ api_extract(struct MHD_Connection *conn, const char *body, size_t body_size) {
   for(size_t i = 0; i < count; i++) {
     char target[PATH_MAX];
 
+    if(smb_path(paths[i])) {
+      result = send_json_error(conn, MHD_HTTP_BAD_REQUEST,
+                               "copy the archive to local storage first");
+      goto done;
+    }
     if(lstat(paths[i], &st) || !S_ISREG(st.st_mode)) {
       result = send_json_error_detail(
         conn, MHD_HTTP_NOT_FOUND, "archive file not found",

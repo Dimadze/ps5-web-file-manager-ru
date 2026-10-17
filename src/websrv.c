@@ -15,6 +15,9 @@
 #include "filemgr.h"
 #include "websrv.h"
 #include "transfer.h"
+#ifdef __SCE__
+#include "app_installer.h"
+#endif
 
 #define REQUEST_BODY_MAX (4 * 1024 * 1024)
 #define HTTP_CONNECTION_MEMORY_LIMIT (8 * 1024 * 1024)
@@ -230,6 +233,9 @@ websrv_listen(unsigned short port) {
     close(srvfd);
     return -1;
   }
+#ifdef __SCE__
+  app_install_if_needed(port);
+#endif
   g_stop_requested = 0;
   g_listen_fd = srvfd;
 

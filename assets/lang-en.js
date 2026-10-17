@@ -1,4 +1,5 @@
 window.WFM_LANG = {
+  smbLocalOperation: "This operation requires local files and folders. Copy them from SMB to local storage first",
   appTitle: "PS5 Web File Manager",
   copy: "Copy",
   move: "Move",

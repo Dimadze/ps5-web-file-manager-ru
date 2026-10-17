@@ -5,5 +5,8 @@
 int pkg_installer_initialize(void);
 int pkg_installer_install(const char *path);
 
-/* Caller owns the returned path; source names contain no SMB credentials. */
-char *pkg_installer_source_path(const char *name);
+/* An acquired source keeps its file/context alive until release. */
+typedef struct pkg_install_source pkg_install_source_t;
+pkg_install_source_t *pkg_installer_source_acquire(const char *name);
+int pkg_installer_source_fd(const pkg_install_source_t *source);
+void pkg_installer_source_release(pkg_install_source_t *source);

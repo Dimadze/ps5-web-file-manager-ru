@@ -1,4 +1,5 @@
 window.WFM_LANG = {
+  smbLocalOperation: "此操作需要本地文件和目录，请先从 SMB 复制到本地存储",
   appTitle: "PS5 Web File Manager",
   copy: "复制",
   move: "移动",

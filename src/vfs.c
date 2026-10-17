@@ -35,6 +35,7 @@ struct wfm_dir {
   struct smb2dir *remote;
   struct dirent entry;
   struct smb2dirent *last;
+  int error;
   dev_t device;
   char path[PATH_MAX];
   struct wfm_dir *next;
@@ -171,12 +172,19 @@ wfm_dir_t *wfm_opendir(const char *path) {
   return dir;
 }
 struct dirent *wfm_readdir(wfm_dir_t *dir) {
-  if(dir->native) return readdir(dir->native);
+  if(dir->error) { errno = dir->error; return NULL; }
+  if(dir->native) {
+    errno = 0;
+    struct dirent *entry = readdir(dir->native);
+    if(!entry) dir->error = errno;
+    return entry;
+  }
   smb_lock();
   dir->last = smb2_readdir(dir->ctx, dir->remote);
   if(!dir->last) { smb_unlock(); return NULL; }
   if(strlen(dir->last->name) >= sizeof(dir->entry.d_name)) {
-    dir->last = NULL; smb_unlock(); errno = ENAMETOOLONG; return NULL;
+    dir->last = NULL; dir->error = ENAMETOOLONG;
+    smb_unlock(); errno = dir->error; return NULL;
   }
   memset(&dir->entry, 0, sizeof(dir->entry));
   strcpy(dir->entry.d_name, dir->last->name);
@@ -185,7 +193,12 @@ struct dirent *wfm_readdir(wfm_dir_t *dir) {
   smb_unlock();
   return &dir->entry;
 }
+int wfm_dir_error(wfm_dir_t *dir) {
+  if(dir->error) errno = dir->error;
+  return dir->error;
+}
 int wfm_closedir(wfm_dir_t *dir) {
+  int saved_errno = errno;
   int result = 0;
   if(dir->native) result = closedir(dir->native);
   else {
@@ -198,6 +211,7 @@ int wfm_closedir(wfm_dir_t *dir) {
     smb_unlock();
   }
   free(dir);
+  if(!result) errno = saved_errno;
   return result;
 }
 

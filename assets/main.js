@@ -37,7 +37,7 @@ let uploadXhr = null;
 let uploadTerminalAbort = false;
 let L = {};
 
-const APP_VERSION = "v1.10";
+const APP_VERSION = "v1.11";
 const SMB_PASSWORD_KEY = "ps5-web-file-mgr:smb-password:";
 const smbPasswords = {};
 const smbReady = {};
@@ -767,7 +767,7 @@ function fitSpaceOptions() {
   if (window.innerWidth <= 640) {
     let minimum = 0;
     for (const option of select.options) {
-      const text = option.smbName === undefined ? option.textContent : "smb …" + option.spaceSuffix;
+      const text = option.smbName === undefined ? option.textContent : "SMB …" + option.spaceSuffix;
       minimum = Math.max(minimum, context.measureText(text).width);
     }
     const prefix = spaceInfoEl.querySelector(".space-prefix");
@@ -783,12 +783,12 @@ function fitSpaceOptions() {
   for (const option of select.options) {
     if (option.smbName === undefined) continue;
     const name = Array.from(option.smbName);
-    let text = "smb " + name.join("") + option.spaceSuffix;
+    let text = "SMB " + name.join("") + option.spaceSuffix;
     if (context.measureText(text).width > width) {
-      while (name.length && context.measureText("smb " + name.join("") + "…" + option.spaceSuffix).width > width) {
+      while (name.length && context.measureText("SMB " + name.join("") + "…" + option.spaceSuffix).width > width) {
         name.pop();
       }
-      text = "smb " + name.join("") + "…" + option.spaceSuffix;
+      text = "SMB " + name.join("") + "…" + option.spaceSuffix;
     }
     option.textContent = text;
   }
@@ -828,7 +828,7 @@ async function refreshSpaces() {
       const remote = /^smb:\/\//.test(item.path || "");
       const name = remote ? displayPath(item.path.replace(/\/+$/, "").split("/").pop()) :
         item.label_key ? t(item.label_key) : displayPath(item.label);
-      const label = remote ? "smb " + name : name;
+      const label = remote ? "SMB " + name : name;
       const suffix = item.available === false ?
         t("diskUnavailable", { name: "" }) :
         item.available === null ? t("diskSpaceUnknown", { name: "" }) :
@@ -1394,6 +1394,10 @@ function renderSingleExtractPath() {
 
 function openExtractDialogForItems(items) {
   if (busy || loadingPath || !items.length) return;
+  if (cwd.startsWith("smb://") || items.some(item => item.path.startsWith("smb://"))) {
+    showActionFailed(t("extract"), t("smbLocalOperation"));
+    return;
+  }
 
   setModalBackgroundLocked(true);
   extractItems = items.slice();
@@ -1467,6 +1471,10 @@ function submitExtractDialog() {
     destination: useCustom ? extractCustomPathEl.value.trim() : cwd,
     separate: extractSeparateEl.checked || (useCustom && items.length > 1) ? "1" : "0"
   };
+  if (request.destination.startsWith("smb://")) {
+    showActionFailed(t("extract"), t("smbLocalOperation"));
+    return;
+  }
   closeExtractDialog();
   startExtractRequest(request);
 }
@@ -2390,7 +2398,7 @@ function renderTasks(tasks) {
   const isFinishing = !isDelete && !isDownload && !isExtract &&
     task.state === "running" && total > 0 && done >= total;
   let pct = total > 0 ? Math.min(100, Math.floor(done * 100 / total)) : 0;
-  if (isExtract && task.state === "running" && pct >= 100) pct = 99;
+  if (!isDownload && task.state === "running" && pct >= 100) pct = 99;
   const div = document.createElement("div");
   div.className = "task " + task.state;
 

@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 #include <sys/stat.h>
 
 #include <ps5/kernel.h>
@@ -71,43 +74,84 @@ install_app(const char *title_id, const char *dir) {
   return sceAppInstUtilAppInstallAll(0);
 }
 
+/* Preserve existing names/settings; only change our loopback launcher URL. */
 static int
-needs_install_file(const char *path) {
+update_launcher_port(const char *path, unsigned short port) {
   struct stat st;
+  FILE *file = NULL;
+  char *data = NULL;
+  char temp[512];
+  char uri[64];
+  char *value, *end;
+  int result = -1;
 
-  if(stat(path, &st)) {
-    return 1;
+  if(stat(path, &st)) return -1;
+  if(st.st_size <= 0 || st.st_size > 65536) { errno = EINVAL; return -1; }
+  data = malloc((size_t)st.st_size + 1);
+  if(!data || !(file = fopen(path, "rb"))) goto done;
+  if(fread(data, 1, (size_t)st.st_size, file) != (size_t)st.st_size) {
+    errno = EIO;
+    goto done;
   }
-  return 0;
+  fclose(file);
+  file = NULL;
+  data[st.st_size] = 0;
+  errno = EINVAL;
+  if(!(value = strstr(data, "\"deeplinkUri\""))) goto done;
+  value += strlen("\"deeplinkUri\"");
+  while(isspace((unsigned char)*value)) value++;
+  if(*value++ != ':') goto done;
+  while(isspace((unsigned char)*value)) value++;
+  if(*value++ != '"' || strncmp(value, "http://127.0.0.1:", 17)) goto done;
+  value += 17;
+  end = value;
+  while(isdigit((unsigned char)*end)) end++;
+  if(end == value || (*end != '/' && *end != '"')) goto done;
+  snprintf(uri, sizeof(uri), "%u", port);
+  if((size_t)(end - value) == strlen(uri) && !memcmp(value, uri, strlen(uri))) {
+    result = 0;
+    goto done;
+  }
+  snprintf(temp, sizeof(temp), "%s.tmp", path);
+  if(!(file = fopen(temp, "wb"))) goto done;
+  if(fwrite(data, 1, (size_t)(value - data), file) != (size_t)(value - data) ||
+     fwrite(uri, 1, strlen(uri), file) != strlen(uri) ||
+     fwrite(end, 1, (size_t)st.st_size - (size_t)(end - data), file) !=
+       (size_t)st.st_size - (size_t)(end - data)) {
+    fclose(file);
+    file = NULL;
+    remove(temp);
+    goto done;
+  }
+  result = fclose(file);
+  file = NULL;
+  if(!result) result = rename(temp, path);
+  if(result) remove(temp);
+done:
+  if(file) fclose(file);
+  free(data);
+  return result;
 }
 
 int
-app_install_if_needed(void) {
+app_install_if_needed(unsigned short port) {
   const char *title_id = TITLE_ID;
   char base_dir[256];
   char sce_sys_dir[256];
   char param_path[256];
   char icon_path[256];
-  struct stat st;
-  int update_needed = 0;
   int err;
+  static int icon_registered;
 
-  asset_register("/icon0.png", icon0_png, icon0_png_size, "image/png", 0);
+  if(!icon_registered) {
+    asset_register("/icon0.png", icon0_png, icon0_png_size, "image/png", 0);
+    icon_registered = 1;
+  }
 
   snprintf(base_dir, sizeof(base_dir), "/user/app/%s", title_id);
   snprintf(sce_sys_dir, sizeof(sce_sys_dir), "/user/app/%s/sce_sys", title_id);
   snprintf(param_path, sizeof(param_path), "%s/param.json", sce_sys_dir);
   snprintf(icon_path, sizeof(icon_path), "%s/icon0.png", sce_sys_dir);
-
-  if(stat(base_dir, &st)) {
-    update_needed = 1;
-  } else if(needs_install_file(param_path) || needs_install_file(icon_path)) {
-    update_needed = 1;
-  }
-
-  if(!update_needed) {
-    return 0;
-  }
 
   printf("Installing launcher app %s\n", title_id);
 
@@ -115,8 +159,12 @@ app_install_if_needed(void) {
     printf("sceAppInstUtilInitialize: error 0x%08X\n", err);
     return -1;
   }
-  if(mkdir(base_dir, 0755) && errno != EEXIST) {
+  if(mkdir("/user/app", 0700) && errno != EEXIST) {
     perror("mkdir app dir");
+    return -1;
+  }
+  if(mkdir(base_dir, 0755) && errno != EEXIST) {
+    perror("mkdir title dir");
     return -1;
   }
   if(mkdir(sce_sys_dir, 0755) && errno != EEXIST) {
@@ -124,7 +172,8 @@ app_install_if_needed(void) {
     return -1;
   }
   if(install_file(param_path, param_json, param_json_size) ||
-     install_file(icon_path, icon0_png, icon0_png_size)) {
+     install_file(icon_path, icon0_png, icon0_png_size) ||
+     update_launcher_port(param_path, port)) {
     perror("install launcher assets");
     return -1;
   }

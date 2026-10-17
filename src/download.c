@@ -278,6 +278,7 @@ tar_prepare_next(tar_stream_t *s) {
         }
         return 0;
       }
+      if(wfm_dir_error(frame->dir)) return -1;
       tar_pop_dir(s);
       continue;
     }

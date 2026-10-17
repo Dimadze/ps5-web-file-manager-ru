@@ -13,28 +13,44 @@
 #include "websrv.h"
 #include "pkg_info.h"
 #include "path_util.h"
+#include "vfs.h"
 
 /* Keep successful source URLs alive: installation can continue after submission. */
-typedef struct pkg_source_url {
+struct pkg_install_source {
   char name[64];
-  char *path;
-  struct pkg_source_url *next;
-} pkg_source_url_t;
-static pkg_source_url_t *sources;
+  int fd;
+  unsigned int refs;
+  struct pkg_install_source *next;
+};
+static pkg_install_source_t *sources;
 static pthread_mutex_t sources_lock = PTHREAD_MUTEX_INITIALIZER;
 
-char *pkg_installer_source_path(const char *name) {
-  char *path = NULL;
+pkg_install_source_t *pkg_installer_source_acquire(const char *name) {
+  pkg_install_source_t *source = NULL;
   const char *extension = strrchr(name, '.');
   if(!extension || (strcmp(extension, ".pkg") && strcmp(extension, ".png"))) return NULL;
   pthread_mutex_lock(&sources_lock);
-  for(pkg_source_url_t *source = sources; source; source = source->next) {
-    if(strlen(source->name) == (size_t)(extension - name) && !strncmp(source->name, name, (size_t)(extension - name))) {
-      path = strdup(source->path); break;
+  for(pkg_install_source_t *item = sources; item; item = item->next) {
+    if(strlen(item->name) == (size_t)(extension - name) && !strncmp(item->name, name, (size_t)(extension - name))) {
+      item->refs++;
+      source = item;
+      break;
     }
   }
   pthread_mutex_unlock(&sources_lock);
-  return path;
+  return source;
+}
+
+int pkg_installer_source_fd(const pkg_install_source_t *source) {
+  return source->fd;
+}
+
+void pkg_installer_source_release(pkg_install_source_t *source) {
+  if(!source) return;
+  pthread_mutex_lock(&sources_lock);
+  int dispose = --source->refs == 0;
+  pthread_mutex_unlock(&sources_lock);
+  if(dispose) { close(source->fd); free(source); }
 }
 
 #ifndef __linux__
@@ -105,7 +121,7 @@ pkg_installer_install(const char *path) {
   char install_path[PATH_MAX + 128];
   char icon_url[160] = {0};
   pkg_details_t details;
-  pkg_source_url_t *source = NULL;
+  pkg_install_source_t *source = NULL;
   const char *uri = path;
   pkg_metadata_t metadata = {
     .uri = NULL,
@@ -136,7 +152,9 @@ pkg_installer_install(const char *path) {
     unsigned short port = websrv_port();
     struct timespec now;
     if(!port || clock_gettime(CLOCK_REALTIME, &now) || !(source = calloc(1, sizeof(*source)))) return -1;
-    if(!(source->path = strdup(path))) { free(source); return -1; }
+    source->fd = open(path, O_RDONLY);
+    if(source->fd < 0) { free(source); return -1; }
+    source->refs = 1; /* Registry ownership, also after install submission. */
     static unsigned long serial;
     pthread_mutex_lock(&sources_lock);
     snprintf(source->name, sizeof(source->name), "%llu-%lu-%lu", (unsigned long long)now.tv_sec,
@@ -164,11 +182,11 @@ pkg_installer_install(const char *path) {
   pthread_mutex_unlock(&installer_lock);
   if(result && source) {
     pthread_mutex_lock(&sources_lock);
-    pkg_source_url_t **link = &sources;
+    pkg_install_source_t **link = &sources;
     while(*link && *link != source) link = &(*link)->next;
     if(*link) *link = source->next;
     pthread_mutex_unlock(&sources_lock);
-    free(source->path); free(source);
+    pkg_installer_source_release(source);
   }
   return result;
 }
