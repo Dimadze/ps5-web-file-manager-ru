@@ -2612,7 +2612,7 @@ async function pollTasksOnce() {
     let sawTrackedTask = false;
     let completedDownload = false;
     for (const task of tasks) {
-      if (task.op === "download" && isTerminalTask(task) &&
+      if ((task.op === "download" || task.op === "upload") && isTerminalTask(task) &&
           (!trackedTask || trackedTask.id !== task.id)) continue;
       if (trackedTask && trackedTask.id === task.id) {
         sawTrackedTask = true;

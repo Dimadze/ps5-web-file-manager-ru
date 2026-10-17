@@ -156,13 +156,13 @@ upload_flush(upload_context_t *ctx) {
   return 0;
 }
 
+/* Caller holds g_tasks_lock, including when the last file completes. */
 static void
-finish_upload_task(file_task_t *task, task_state_t state, const char *current,
-                   const char *error) {
+finish_upload_task_locked(file_task_t *task, task_state_t state, const char *current,
+                          const char *error) {
   if(!task) {
     return;
   }
-  pthread_mutex_lock(&g_tasks_lock);
   if(task_is_active(task)) {
     time_t completed_at = time(NULL);
     task->state = state;
@@ -185,7 +185,6 @@ finish_upload_task(file_task_t *task, task_state_t state, const char *current,
     }
     task->updated_at = completed_at;
   }
-  pthread_mutex_unlock(&g_tasks_lock);
 }
 
 static void
@@ -196,15 +195,17 @@ finish_upload_context_error(upload_context_t *ctx) {
     return;
   }
   upload_error_message(ctx);
-  finish_upload_task(ctx->task,
+  pthread_mutex_lock(&g_tasks_lock);
+  finish_upload_task_locked(ctx->task,
                      ctx->error == ECANCELED ? TASK_CANCELED : TASK_FAILED,
                      ctx->target[0] ? ctx->target : ctx->task->current,
                      ctx->error == ECANCELED ? "canceled" : ctx->error_message);
+  pthread_mutex_unlock(&g_tasks_lock);
   ctx->task_done = 1;
 }
 
 static file_task_t *
-upload_task_from_conn(struct MHD_Connection *conn) {
+upload_task_from_conn_locked(struct MHD_Connection *conn) {
   char *idstr = request_value(conn, "X-WFM-Task-ID", "task_id");
   unsigned long id = idstr ? strtoul(idstr, NULL, 10) : 0;
   file_task_t *task = NULL;
@@ -213,12 +214,10 @@ upload_task_from_conn(struct MHD_Connection *conn) {
   if(!id) {
     return NULL;
   }
-  pthread_mutex_lock(&g_tasks_lock);
   task = find_task_locked(id);
-  if(!task || task->op != TASK_UPLOAD || !task_is_active(task)) {
+  if(task && task->op != TASK_UPLOAD) {
     task = NULL;
   }
-  pthread_mutex_unlock(&g_tasks_lock);
   return task;
 }
 
@@ -378,20 +377,19 @@ api_upload_prepare(struct MHD_Connection *conn, const char *body,
 
 enum MHD_Result
 api_upload_finish(struct MHD_Connection *conn) {
-  file_task_t *task = upload_task_from_conn(conn);
-
-  if(!task) {
-    return send_json_error(conn, MHD_HTTP_NOT_FOUND, "active task not found");
+  pthread_mutex_lock(&g_tasks_lock);
+  file_task_t *task = upload_task_from_conn_locked(conn);
+  if(task && task_is_active(task) && task->cancel_requested) {
+    finish_upload_task_locked(task, TASK_CANCELED,
+                             task->current[0] ? task->current : task->src, "canceled");
   }
-  if(task_cancel_requested(task)) {
-    finish_upload_task(task, TASK_CANCELED,
-                       task->current[0] ? task->current : task->src,
-                       "canceled");
-    return send_json_error(conn, MHD_HTTP_CONFLICT, "canceled");
-  }
-  finish_upload_task(task, TASK_DONE,
-                     task->current[0] ? task->current : task->src, NULL);
-  return send_json_ok(conn);
+  unsigned int status = !task ? MHD_HTTP_NOT_FOUND :
+                        task->state == TASK_DONE ? MHD_HTTP_OK : MHD_HTTP_CONFLICT;
+  const char *error = !task ? "upload task not found" :
+                      task->state == TASK_CANCELED ? "canceled" :
+                      task->state == TASK_FAILED ? "upload failed" : "upload is not complete";
+  pthread_mutex_unlock(&g_tasks_lock);
+  return status == MHD_HTTP_OK ? send_json_ok(conn) : send_json_error(conn, status, error);
 }
 
 int
@@ -401,7 +399,7 @@ filemgr_upload_begin(struct MHD_Connection *conn, void **upload_ctx) {
   char *rel = request_value(conn, "X-WFM-Rel", "rel");
   char *overwrite = request_value(conn, "X-WFM-Overwrite", "overwrite");
   char *size_text = request_value(conn, "X-WFM-Size", "size");
-  file_task_t *task = upload_task_from_conn(conn);
+  file_task_t *task;
   char **checked_dirs = NULL;
   size_t checked_dir_count = 0;
   struct stat st;
@@ -423,12 +421,12 @@ filemgr_upload_begin(struct MHD_Connection *conn, void **upload_ctx) {
   if(size_text) {
     ctx->expected = strtoull(size_text, NULL, 10);
   }
+  pthread_mutex_lock(&g_tasks_lock);
+  task = upload_task_from_conn_locked(conn);
+  if(task && !task_is_active(task)) task = NULL;
+  if(task) task->active_streams++;
   ctx->task = task;
-  if(task) {
-    pthread_mutex_lock(&g_tasks_lock);
-    task->active_streams++;
-    pthread_mutex_unlock(&g_tasks_lock);
-  }
+  pthread_mutex_unlock(&g_tasks_lock);
   if(task && task_cancel_requested(task)) {
     ctx->failed = 1;
     ctx->error = ECANCELED;
@@ -622,6 +620,9 @@ filemgr_upload_finish(struct MHD_Connection *conn, void *upload_ctx) {
   if(ctx->task) {
     pthread_mutex_lock(&g_tasks_lock);
     ctx->task->upload_completed++;
+    if(ctx->task->upload_completed == ctx->task->src_count && !ctx->task->cancel_requested) {
+      finish_upload_task_locked(ctx->task, TASK_DONE, ctx->target, NULL);
+    }
     pthread_mutex_unlock(&g_tasks_lock);
   }
   ret = 0;
@@ -664,9 +665,11 @@ filemgr_upload_free(void *upload_ctx) {
     }
     if(ctx->task && !ctx->task_done) {
       int canceled = task_cancel_requested(ctx->task);
-      finish_upload_task(ctx->task, canceled ? TASK_CANCELED : TASK_FAILED,
+      pthread_mutex_lock(&g_tasks_lock);
+      finish_upload_task_locked(ctx->task, canceled ? TASK_CANCELED : TASK_FAILED,
                          ctx->target[0] ? ctx->target : ctx->task->current,
                          canceled ? "canceled" : "client disconnected");
+      pthread_mutex_unlock(&g_tasks_lock);
       ctx->task_done = 1;
     }
   }
