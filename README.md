@@ -30,7 +30,7 @@ PS5 web file manager payload. It runs an HTTP UI starting at port `8888`, regist
 - Conflict prompts for overwriting files and merging folders.
 - Extract archive files ending with `.7z`, `.001`, `.zip`, `.zipx`, `.rar`, `.part01.rar`, `.arj`, `.bz2`, `.bzip2`, `.tbz`, `.tbz2`, `.cab`, `.gz`, `.gzip`, `.tgz`, `.tpz`, `.lzh`, `.lha`, `.tar`, `.xz`, `.txz`, `.z`, `.taz`, `.zst`, `.tzst`, `.xar`, `.xip`, `.cpio`, `.lzma`, `.pmd`. Extraction requires the separately distributed [`wfm-7zip-helper.elf` helper](https://github.com/owendswang/wfm-7zip-helper) at `/data/wfm/wfm-7zip-helper.elf`.
 - Upload single files, multiple files, or folders from a remote browser using the file picker or full-page drag and drop. Upload is hidden in the PS5 browser because it is intended for another device on the network.
-- Download a single file directly, or download folders/multiple selections as a `.tar` archive. Download is hidden in the PS5 browser.
+- Download selected items individually: files download directly, and each folder downloads as its own `.tar` archive. Download is hidden in the PS5 browser.
 - Full-screen task overlay with delayed display, progress, speed, ETA, cancel support, and task recovery after reopening the browser while the payload process is still running.
 - Copied/moved files and folders are set to `0777` where the filesystem supports Unix permissions. FAT/exFAT-style filesystems may ignore chmod.
 - Uploaded files are written through temporary files and are renamed into place after the upload completes.

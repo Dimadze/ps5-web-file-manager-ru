@@ -125,6 +125,7 @@ window.WFM_LANG = {
   selectedForPaste: "已选择 {name}，进入目标目录后点击{verb}",
   clipboardCleared: "已清除待操作项目",
   downloadStarted: "已开始下载 {name}",
+  downloadInterrupted: "无法确认下载结果，已停止后续下载。请检查浏览器下载列表后重试未完成的项目。",
   uploadFolderChoice: "选择要上传的目录？\n\n确定：选择目录\n取消：选择文件",
   uploadOverwriteConfirm: "目标中已存在同名项目: {names}\n\n是否覆盖同名文件并合并同名目录？",
   uploadingStatus: "正在上传 {index}/{count}: {name}",

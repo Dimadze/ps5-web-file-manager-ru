@@ -33,6 +33,8 @@ let extractItems = [];
 let pkgInfoItem = null;
 let pkgInfoRequestId = 0;
 let downloadFrame = null;
+let downloadQueue = [];
+let downloadAck = 0;
 let uploadXhr = null;
 let uploadTerminalAbort = false;
 let L = {};
@@ -520,7 +522,10 @@ function trackTask(id, op, fromClipboard, clearClipboardOnDone) {
 }
 
 function requestTaskCancel(id) {
-  if (trackedTask && trackedTask.id === id) trackedTask.cancelRequested = true;
+  if (trackedTask && trackedTask.id === id) {
+    trackedTask.cancelRequested = true;
+    if (trackedTask.op === "download") downloadQueue = [];
+  }
 }
 
 function clearTrackedTask() {
@@ -588,6 +593,7 @@ function handleTerminalTask(task) {
     return false;
   }
   if (task.state === "failed") {
+    if (task.op === "download") downloadQueue = [];
     clearTrackedTask();
     const message = taskFailureMessage(task);
     setStatus(message);
@@ -595,6 +601,7 @@ function handleTerminalTask(task) {
     return false;
   }
   if (task.state === "canceled") {
+    if (task.op === "download") downloadQueue = [];
     clearTrackedTask();
     setStatus(t("taskCanceled", { label: opLabel(task.op) }));
     return false;
@@ -1810,6 +1817,7 @@ function updateButtons() {
   }
   document.getElementById("copyBtn").disabled = locked || items.length === 0;
   document.getElementById("moveBtn").disabled = locked || items.length === 0;
+  document.getElementById("renameBtn").disabled = locked || items.length !== 1;
   document.getElementById("deleteBtn").disabled = locked || items.length === 0;
   downloadBtn.disabled = locked || items.length === 0;
   document.getElementById("refreshBtn").disabled = locked;
@@ -2502,7 +2510,9 @@ function renderTasks(tasks) {
 async function pollTasksOnce() {
   const trackedIdAtStart = trackedTask ? trackedTask.id : 0;
   try {
-    const data = await api("/api/tasks");
+    const acknowledgeDownload = downloadAck;
+    const data = await api("/api/tasks", acknowledgeDownload ? { download_ack: acknowledgeDownload } : undefined);
+    if (downloadAck === acknowledgeDownload) downloadAck = 0;
     if ((trackedTask ? trackedTask.id : 0) !== trackedIdAtStart) {
       setTimeout(pollTasks, 0);
       return;
@@ -2533,14 +2543,19 @@ async function pollTasksOnce() {
     const taskBecameIdle = wasTaskBusy && !busy;
     let shouldRefresh = false;
     let sawTrackedTask = false;
+    let completedDownload = false;
     for (const task of tasks) {
+      if (task.op === "download" && isTerminalTask(task) &&
+          (!trackedTask || trackedTask.id !== task.id)) continue;
       if (trackedTask && trackedTask.id === task.id) {
         sawTrackedTask = true;
         if (task.cancel_requested) trackedTask.cancelRequested = true;
         if (trackedTask.state === task.state) continue;
         trackedTask.state = task.state;
+        completedDownload = task.op === "download" && task.state === "done";
       }
       if (isTerminalTask(task)) {
+        if (task.op === "download") downloadAck = task.id;
         const retryingPassword = handleTerminalTask(task);
         if (task.op !== "pkg_install" && !retryingPassword) shouldRefresh = true;
       }
@@ -2550,9 +2565,17 @@ async function pollTasksOnce() {
       if ((trackedTask.fromClipboard || trackedTask.clearClipboardOnDone) &&
           !trackedTask.cancelRequested) clearClipboardAfterPaste();
       shouldRefresh = true;
+      if (trackedTask.op === "download") {
+        downloadQueue = [];
+        showActionFailed(t("download"), t("downloadInterrupted"));
+      }
       clearTrackedTask();
     }
     if (taskBecameIdle && !fileTasks.length) shouldRefresh = true;
+    if (completedDownload && downloadQueue.length && !trackedTask) {
+      await startDownload(downloadQueue.shift());
+      return;
+    }
     if (shouldRefresh) {
       if (taskBecameIdle) startContentLoadingTimer();
       clearSelection(false);
@@ -2610,13 +2633,21 @@ function actionDelete() {
 async function actionDownload() {
   if (busy || loadingPath || selected.size === 0) return;
   const items = selectedEntries();
+  if (!items.length) return;
+  downloadQueue = items.slice(1);
+  await startDownload(items[0]);
+  await pollTasks();
+}
+
+async function startDownload(item) {
   const label = t("download");
   try {
+    localActionBusy = true;
     setBusy(true);
     taskRefreshPath = cwd;
     setStatus(t("actionBusy", { label }));
     const data = await apiForm("/api/download/prepare", {
-      paths: items.map(item => item.path).join("\n")
+      paths: item.path
     });
     trackTask(data.task_id, "download", false);
     if (downloadFrame) downloadFrame.parentNode.removeChild(downloadFrame);
@@ -2624,11 +2655,13 @@ async function actionDownload() {
     downloadFrame.hidden = true;
     downloadFrame.src = "/api/download?id=" + encodeURIComponent(data.task_id);
     document.body.appendChild(downloadFrame);
-    setStatus(t("downloadStarted", { name: itemTitle(items) }));
-    await pollTasks();
+    setStatus(t("downloadStarted", { name: displayName(item) }));
   } catch (err) {
+    downloadQueue = [];
     setBusy(false);
     showActionFailed(label, err.message);
+  } finally {
+    localActionBusy = false;
   }
 }
 

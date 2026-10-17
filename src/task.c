@@ -9,6 +9,8 @@
 #include "path_util.h"
 
 #define ETA_AVERAGE_WINDOW_SECONDS 30
+/* Other polling clients must not consume the initiating browser's result. */
+#define DOWNLOAD_RESULT_RETENTION_SECONDS (5 * 60)
 
 pthread_mutex_t g_tasks_lock = PTHREAD_MUTEX_INITIALIZER;
 file_task_t *g_tasks = NULL;
@@ -85,11 +87,14 @@ free_task(file_task_t *task) {
 void
 remove_finished_tasks_locked(void) {
   file_task_t **link = &g_tasks;
+  time_t now = time(NULL);
 
   while(*link) {
     file_task_t *task = *link;
 
     if(task_is_active(task) || task->active_streams ||
+       (task->op == TASK_DOWNLOAD && !task->reported &&
+        now - task->updated_at < DOWNLOAD_RESULT_RETENTION_SECONDS) ||
        (task->op == TASK_PKG_INSTALL && !task->reported)) {
       link = &task->next;
       continue;

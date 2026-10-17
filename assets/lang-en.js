@@ -125,6 +125,7 @@ window.WFM_LANG = {
   selectedForPaste: "Selected {name}. Enter the target folder, then choose {verb}",
   clipboardCleared: "Pending operation canceled",
   downloadStarted: "Download started: {name}",
+  downloadInterrupted: "The download result could not be confirmed. Remaining downloads were stopped. Check your browser's downloads before retrying.",
   uploadFolderChoice: "Upload a folder?\n\nOK: choose a folder\nCancel: choose files",
   uploadOverwriteConfirm: "Items with the same name already exist: {names}\n\nOverwrite matching files and merge matching folders?",
   uploadingStatus: "Uploading {index}/{count}: {name}",

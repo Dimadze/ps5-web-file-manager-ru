@@ -371,6 +371,10 @@ button.primary:hover:not(:disabled) {
   background: #20262d;
 }
 
+.narrow-only {
+  display: none;
+}
+
 .paste-action {
   max-width: 360px;
 }
@@ -439,7 +443,7 @@ button.install-action:hover:not(:disabled) {
 
 table {
   width: 100%;
-  min-width: 1034px;
+  min-width: 1494px; /* 760px filename + 734px fixed columns. */
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -626,7 +630,7 @@ th.name-col.sorted-desc .name-heading::after {
 }
 
 .name-col {
-  min-width: 600px;
+  width: auto;
 }
 
 td.name-col {
@@ -769,9 +773,11 @@ input[type="checkbox"] {
   padding-right: 12px;
 }
 
-tr.hovered .row-tools,
-.keyboard-navigation .file-name-cell:focus-within .row-tools {
-  display: flex;
+@media (min-width: 641px) {
+  tr.hovered .row-tools,
+  .keyboard-navigation .file-name-cell:focus-within .row-tools {
+    display: flex;
+  }
 }
 
 .row-tool {
@@ -797,7 +803,7 @@ tr.hovered .row-tools,
   height: 20px;
 }
 
-@media (hover: none) {
+@media (min-width: 641px) and (hover: none) {
   .row-tools {
     display: flex;
   }
@@ -1535,6 +1541,10 @@ tr.hovered .row-tools,
 }
 
 @media (max-width: 640px) {
+  .narrow-only {
+    display: inline-flex;
+  }
+
   body {
     font-size: 16px;
   }
@@ -1714,23 +1724,6 @@ tr.hovered .row-tools,
 
   .row-action {
     padding: 10px 12px;
-  }
-
-  .row-tools {
-    padding-right: 6px;
-  }
-
-  .row-tool {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    min-height: 34px;
-    padding: 8px;
-  }
-
-  .row-tool img {
-    width: 18px;
-    height: 18px;
   }
 
   input[type="checkbox"] {

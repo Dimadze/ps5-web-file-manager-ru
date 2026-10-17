@@ -1240,12 +1240,17 @@ static enum MHD_Result
 api_tasks(struct MHD_Connection *conn) {
   strbuf_t b = {0};
   file_task_t *task;
+  char *ack_text = query_value(conn, "download_ack");
+  unsigned long download_ack = ack_text ? strtoul(ack_text, NULL, 10) : 0;
   time_t now = time(NULL);
   int first = 1;
 
+  free(ack_text);
   strbuf_append(&b, "{\"ok\":true,\"tasks\":[");
   pthread_mutex_lock(&g_tasks_lock);
   for(task = g_tasks; task; task = task->next) {
+    if(task->op == TASK_DOWNLOAD && task->id == download_ack && !task_is_active(task))
+      task->reported = 1;
     if(!first) {
       strbuf_append(&b, ",");
     }
@@ -1272,7 +1277,7 @@ api_tasks(struct MHD_Connection *conn) {
                   task->transfer_started_at ? (long long)(now - task->transfer_started_at) : 0LL,
                   task->created_at ? (long long)(now - task->created_at) : 0LL,
                   (long long)task->updated_at);
-    if(!task_is_active(task)) task->reported = 1;
+    if(!task_is_active(task) && task->op != TASK_DOWNLOAD) task->reported = 1;
   }
   strbuf_printf(&b, "],\"now\":%lld,\"completion\":", (long long)now);
   if(g_last_completion.id) {
