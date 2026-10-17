@@ -153,7 +153,16 @@
     <section class="permission-panel smb-manager-panel" role="dialog" aria-modal="true" aria-labelledby="smbManagerTitle">
       <h2 id="smbManagerTitle" class="permission-title" data-i18n="manageSmb"></h2>
       <div id="smbConnectionList" class="smb-connection-list"></div>
-      <div class="permission-actions">
+      <div id="smbSharePicker" hidden>
+        <label for="smbShareSelect" data-i18n="smbChooseShare"></label>
+        <select id="smbShareSelect"></select>
+        <p class="smb-connections-empty" data-i18n="smbShareHint"></p>
+        <div class="permission-actions">
+          <button id="smbShareConnectBtn" class="primary" type="button" data-i18n="smbConnect"></button>
+          <button id="smbShareCancelBtn" type="button" data-i18n="cancel"></button>
+        </div>
+      </div>
+      <div id="smbManagerActions" class="permission-actions">
         <button id="smbManagerAddBtn" class="primary" type="button" data-i18n="addSmb"></button>
         <button id="smbManagerCloseBtn" type="button" data-i18n="close"></button>
       </div>

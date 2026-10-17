@@ -424,6 +424,11 @@ button.install-action:hover:not(:disabled) {
   pointer-events: none;
 }
 
+/* PS5 cursor navigation also targets scrollable containers behind overlays. */
+.shell.modal-open .content {
+  overflow: hidden;
+}
+
 .content-loading {
   position: absolute;
   right: 0;
@@ -785,7 +790,7 @@ input[type="checkbox"] {
   min-width: 40px;
   height: 40px;
   min-height: 40px;
-  padding: 9px;
+  padding: 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -799,14 +804,18 @@ input[type="checkbox"] {
 
 .row-tool img {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 @media (min-width: 641px) and (hover: none) {
   .row-tools {
     display: flex;
   }
+}
+
+.shell.interaction-locked .file-name-cell .row-tools {
+  display: none;
 }
 
 .empty {
@@ -1100,6 +1109,22 @@ input[type="checkbox"] {
 
 .smb-manager-panel .permission-actions {
   flex: 0 0 auto;
+}
+
+#smbSharePicker {
+  margin-top: 20px;
+}
+
+#smbShareSelect {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid #46515f;
+  border-radius: 6px;
+  background: #20262d;
+  color: #edf0f2;
+  font: inherit;
 }
 
 .permission-path {

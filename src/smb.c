@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <smb2/libsmb2-dcerpc-srvsvc.h>
+#include <smb2/libsmb2-raw.h>
+#include <smb2/smb2-errors.h>
 
 #define SMB_CONNECTION_MAX 64
 #if WFM_DEBUG
@@ -237,8 +241,11 @@ static struct smb2_context *connect_address(const smb_address_t *a) {
     } else {
       snprintf(client_error, sizeof(client_error), "%s", smb2_get_error(ctx));
     }
+    uint32_t status = smb2_get_nterror(ctx);
+    int auth_error = status == SMB2_STATUS_LOGON_FAILURE ||
+      status == SMB2_STATUS_WRONG_PASSWORD || status == SMB2_STATUS_ACCESS_DENIED;
     smb2_destroy_context(ctx);
-    errno = -result;
+    errno = auth_error ? EACCES : -result;
   }
   return NULL;
 }
@@ -261,6 +268,81 @@ struct smb2_context *smb_connect_path(const char *path, smb_address_t *a) {
   pthread_mutex_unlock(&config_mutex);
   if(!matched) { errno = ENOENT; return NULL; }
   return connect_address(a);
+}
+
+typedef struct share_enum_result {
+  int done;
+  int status;
+  struct srvsvc_NetrShareEnum_rep *reply;
+} share_enum_result_t;
+
+static void share_enum_cb(struct smb2_context *ctx, int status, void *data, void *opaque) {
+  share_enum_result_t *result = opaque;
+  result->status = status;
+  result->reply = data;
+  result->done = 1;
+}
+
+enum MHD_Result api_smb_shares(struct MHD_Connection *conn, const char *body, size_t size) {
+  char *input = body_form_value(body, size, "address");
+  char *password = body_form_value(body, size, "password");
+  char ipc[PATH_MAX];
+  smb_address_t a;
+  size_t len = input ? strlen(input) : 0;
+  if(len && input[len - 1] == '/') input[--len] = 0;
+  int valid = input && smb_path(input) && !strchr(input + 6, '/') &&
+    snprintf(ipc, sizeof(ipc), "%s/IPC$", input) < (int)sizeof(ipc) &&
+    !smb_parse_address(ipc, &a);
+  free(input);
+  if(!valid || (password && copy_field(a.password, sizeof(a.password), password, strlen(password)))) {
+    free(password);
+    return send_json_error(conn, MHD_HTTP_BAD_REQUEST, "invalid SMB server address; use smb://server/");
+  }
+  free(password);
+  if(has_active_task()) return send_json_error(conn, MHD_HTTP_CONFLICT, "another task is running");
+  smb_lock();
+  struct smb2_context *ctx = connect_address(&a);
+  share_enum_result_t result = {0};
+  int status = ctx ? smb2_share_enum_async(ctx, SHARE_INFO_1, share_enum_cb, &result) : -errno;
+  struct timespec start, now;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  while(ctx && !status && !result.done) {
+    struct pollfd pfd = {.fd = smb2_get_fd(ctx), .events = smb2_which_events(ctx)};
+    int ready = poll(&pfd, 1, 1000);
+    if(ready < 0 && errno == EINTR) continue;
+    if(ready < 0) { status = -errno; break; }
+    status = smb2_service(ctx, pfd.revents);
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if(!result.done && now.tv_sec - start.tv_sec >= 15) status = -ETIMEDOUT;
+  }
+  if(!status) status = result.status;
+  if(!status && !result.reply) status = -EIO;
+  strbuf_t json = {0};
+  if(!status) {
+    strbuf_append(&json, "{\"ok\":true,\"shares\":[");
+    struct srvsvc_SHARE_INFO_1_CONTAINER *shares = &result.reply->ses.ShareInfo.Level1;
+    int first = 1;
+    for(uint32_t i = 0; shares->Buffer && i < shares->EntriesRead; i++) {
+      struct srvsvc_SHARE_INFO_1 *share = &shares->Buffer->share_info_1[i];
+      if((share->type & 3) != SHARE_TYPE_DISKTREE || !share->netname.utf8) continue;
+      if(!first) strbuf_append(&json, ",");
+      first = 0;
+      json_escape(&json, share->netname.utf8);
+    }
+    strbuf_append(&json, "]}");
+  }
+  char detail[512];
+  snprintf(detail, sizeof(detail), "%s", ctx ? smb2_get_error(ctx) : client_error);
+  if(status && !detail[0]) snprintf(detail, sizeof(detail), "share enumeration failed (%d)", status);
+  SMB_DEBUG("share enumeration server=%s status=%d detail=%s", a.server, status, detail);
+  int password_required = status == -EACCES || status == 5;
+  if(result.reply) smb2_free_data(ctx, result.reply);
+  /* Keep callback state alive until outstanding requests have been canceled. */
+  if(ctx) smb2_destroy_context(ctx);
+  smb_unlock();
+  if(status) return send_json_error_detail(conn, MHD_HTTP_BAD_GATEWAY, "SMB share enumeration failed",
+    password_required ? "smb_password_required" : "smb_share_enum_failed", detail);
+  return send_buffer(conn, MHD_HTTP_OK, json.data, "application/json");
 }
 
 enum MHD_Result api_smb_add(struct MHD_Connection *conn, const char *body, size_t size, int connecting) {
