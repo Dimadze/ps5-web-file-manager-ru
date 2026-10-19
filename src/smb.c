@@ -347,6 +347,7 @@ enum MHD_Result api_smb_shares(struct MHD_Connection *conn, const char *body, si
 
 enum MHD_Result api_smb_add(struct MHD_Connection *conn, const char *body, size_t size, int connecting) {
   char *input = body_form_value(body, size, "address");
+  if(connecting) input = fs_path_value(input);
   char *password = body_form_value(body, size, "password");
   smb_address_t a;
   if(!input || smb_parse_address(input, &a)) {
@@ -431,7 +432,7 @@ enum MHD_Result api_smb_add(struct MHD_Connection *conn, const char *body, size_
 }
 
 enum MHD_Result api_smb_remove(struct MHD_Connection *conn, const char *body, size_t size) {
-  char *path = body_form_value(body, size, "path");
+  char *path = fs_path_value(body_form_value(body, size, "path"));
   if(!smb_path(path) || strlen(path) >= PATH_MAX) {
     free(path);
     return send_json_error(conn, MHD_HTTP_BAD_REQUEST, "invalid SMB path");
