@@ -40,7 +40,7 @@ let uploadXhr = null;
 let uploadTerminalAbort = false;
 let L = {};
 
-const APP_VERSION = "v1.11b";
+const APP_VERSION = "v1.12";
 const SMB_PASSWORD_KEY = "ps5-web-file-mgr:smb-password:";
 const smbPasswords = {};
 const smbReady = {};
@@ -78,6 +78,7 @@ const smbShareSelectEl = document.getElementById("smbShareSelect");
 const smbManagerActionsEl = document.getElementById("smbManagerActions");
 let smbShareChoice = null;
 let smbConnections = [];
+let storagePaths = [];
 const statusEl = document.getElementById("statusText");
 const versionEl = document.getElementById("versionText");
 const nameFilterBtn = document.getElementById("nameFilterBtn");
@@ -273,7 +274,7 @@ function hideContentLoading() {
 async function request(path, params, options) {
   const qs = new URLSearchParams(params || {});
   const fetchOptions = Object.assign({ method: "POST" }, options || {});
-  if (path.indexOf("/api/smb/") !== 0 && path !== "/api/space") {
+  if (path.indexOf("/api/smb/") !== 0 && path.indexOf("/api/storage/") !== 0 && path !== "/api/space") {
     await ensureSmbPaths(params);
     if (fetchOptions.body && fetchOptions.headers &&
         fetchOptions.headers["Content-Type"] === "application/x-www-form-urlencoded") {
@@ -282,13 +283,17 @@ async function request(path, params, options) {
       await ensureSmbPaths(values);
     }
   }
-  const response = await fetch(path + (qs.toString() ? "?" + qs.toString() : ""), fetchOptions);
+  const response = await fetch(path + (qs.toString() ? "?" + qs.toString() : ""), fetchOptions).catch(error => {
+    if (error.name !== "AbortError") error.code = "backend_unreachable";
+    throw error;
+  });
   if (!response.ok) {
     const data = await response.json();
     const error = new Error(backendErrorText(data.error_code, data.error_arg, data.error));
     error.code = data.error_code;
+    error.detail = data.error_arg;
     // Recheck browser credentials on the next operation after a backend restart/error.
-    if (path.indexOf("/api/smb/") !== 0 && path !== "/api/space") {
+    if (path.indexOf("/api/smb/") !== 0 && path.indexOf("/api/storage/") !== 0 && path !== "/api/space") {
       for (const root of Object.keys(smbReady)) delete smbReady[root];
     }
     throw error;
@@ -786,32 +791,37 @@ function fitSpaceOptions() {
   if (window.innerWidth <= 640) {
     let minimum = 0;
     for (const option of select.options) {
-      const text = option.smbName === undefined ? option.textContent : "SMB …" + option.spaceSuffix;
+      const text = option.spaceName === undefined ? option.textContent : option.namePrefix + "…" + option.spaceSuffix;
       minimum = Math.max(minimum, context.measureText(text).width);
     }
-    const prefix = spaceInfoEl.querySelector(".space-prefix");
     const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 32 +
-      parseFloat(style.marginLeft) + (prefix ? prefix.getBoundingClientRect().width : 0);
+      parseFloat(style.marginLeft);
     spaceInfoEl.style.minWidth = Math.min(Math.ceil(minimum + padding), spaceInfoEl.parentNode.clientWidth) + "px";
   } else {
     spaceInfoEl.style.minWidth = "";
   }
-  // Reserve padding and the native dropdown arrow; only shorten SMB names.
+  // Reserve padding and the native dropdown arrow; keep capacity text intact.
   const width = select.clientWidth - parseFloat(style.paddingLeft) -
-    parseFloat(style.paddingRight) - 30;
-  for (const option of select.options) {
-    if (option.smbName === undefined) continue;
-    const name = Array.from(option.smbName);
-    let text = "SMB " + name.join("") + option.spaceSuffix;
+    parseFloat(style.paddingRight) - 20;
+  const selected = select.options[select.selectedIndex];
+  let text = selected ? selected.textContent : "";
+  select.style.height = "";
+  if (selected && selected.spaceName !== undefined) {
+    const name = Array.from(selected.spaceName);
     if (context.measureText(text).width > width) {
-      while (name.length && context.measureText("SMB " + name.join("") + "…" + option.spaceSuffix).width > width) {
+      while (name.length && context.measureText(selected.namePrefix + name.join("") + "…" + selected.spaceSuffix).width > width) {
         name.pop();
       }
-      text = "SMB " + name.join("") + "…" + option.spaceSuffix;
+      text = selected.namePrefix + name.join("") + "…" + selected.spaceSuffix;
     }
-    option.textContent = text;
   }
-  const selected = select.options[select.selectedIndex];
+  spaceInfoEl.querySelector(".space-value").textContent = text;
+  if (selected && text !== selected.textContent) {
+    const fullText = selected.textContent;
+    selected.textContent = text;
+    select.style.height = select.getBoundingClientRect().height + "px";
+    selected.textContent = fullText;
+  }
   select.title = selected ? selected.title : "";
 }
 
@@ -820,6 +830,7 @@ async function refreshSpaces() {
     const data = await api("/api/space", { path: cwd });
     const previousConnections = smbConnections;
     smbConnections = (data.spaces || []).filter(item => /^smb:\/\//.test(item.path || ""));
+    storagePaths = (data.spaces || []).filter(item => item.custom || /^smb:\/\//.test(item.path || ""));
     for (const previous of previousConnections) {
       const next = smbConnections.find(item => item.path === previous.path);
       if (!next) forgetSmbPassword(previous.path);
@@ -831,36 +842,35 @@ async function refreshSpaces() {
     const select = document.createElement("select");
     select.id = "spaceSelect";
     select.className = "space-select";
+    select.setAttribute("aria-label", t("disks"));
     select.disabled = spaceNavigationLocked();
     let currentIndex = -1;
     let internalIndex = -1;
-    if ((data.spaces || []).length) {
-      const prefix = document.createElement("label");
-      prefix.className = "space-prefix";
-      prefix.htmlFor = select.id;
-      prefix.textContent = t("disks");
-      spaceInfoEl.appendChild(prefix);
-    }
     for (const item of data.spaces || []) {
       const option = document.createElement("option");
       option.value = item.path || "";
       const remote = /^smb:\/\//.test(item.path || "");
       const name = remote ? displayPath(item.path.replace(/\/+$/, "").split("/").pop()) :
-        item.label_key ? t(item.label_key) : displayPath(item.label);
+        item.label_key ? t(item.label_key) : displayPath(item.path || item.label);
       const label = remote ? "SMB " + name : name;
       const suffix = item.available === false ?
         t("diskUnavailable", { name: "" }) :
+        item.custom && !remote ? "" :
         item.available === null ? t("diskSpaceUnknown", { name: "" }) :
         t("diskSpace", { name: "", free: formatBytes(item.free, false),
           total: formatBytes(item.total, false) });
       option.textContent = label + suffix;
-      if (remote) {
-        option.smbName = name;
+      if (remote || item.custom) {
+        option.spaceName = name;
+        option.namePrefix = remote ? "SMB " : "";
         option.spaceSuffix = suffix;
       }
-      option.title = item.path + " " + option.textContent;
+      option.title = displayPath(item.path) + " " + option.textContent;
       if (item.label_key === "storageInternal") internalIndex = select.options.length;
-      if (item.current) currentIndex = select.options.length;
+      if ((!item.custom || remote) && item.current &&
+          (currentIndex < 0 || option.value.length >= select.options[currentIndex].value.length)) {
+        currentIndex = select.options.length;
+      }
       select.appendChild(option);
     }
     if (currentIndex < 0 && cwd.charAt(0) === "/") currentIndex = internalIndex;
@@ -871,12 +881,20 @@ async function refreshSpaces() {
         fitSpaceOptions();
         return;
       }
-      const ok = await load(select.value, undefined, false, true, "seed");
+      const path = select.value;
+      if (path.charAt(0) === "/" && storagePaths.some(item => item.path === path)) {
+        select.selectedIndex = currentIndex;
+      }
+      const ok = await load(path, undefined, false, true, "seed");
       if (!ok) select.selectedIndex = currentIndex;
       fitSpaceOptions();
     });
     if (select.options.length) {
       spaceInfoEl.appendChild(select);
+      const value = document.createElement("span");
+      value.className = "space-value";
+      value.setAttribute("aria-hidden", "true");
+      spaceInfoEl.appendChild(value);
       fitSpaceOptions();
     }
     renderAddressPath();
@@ -971,13 +989,13 @@ function smbContainsPath(root, path) {
 
 function renderSmbConnections() {
   smbConnectionListEl.textContent = "";
-  if (!smbConnections.length) {
+  if (!storagePaths.length) {
     const empty = document.createElement("div");
     empty.className = "smb-connections-empty";
     empty.textContent = t("smbConnectionsEmpty");
     smbConnectionListEl.appendChild(empty);
   }
-  for (const item of smbConnections) {
+  for (const item of storagePaths) {
     const row = document.createElement("div");
     row.className = "smb-connection-row";
     const path = document.createElement("span");
@@ -994,6 +1012,12 @@ function renderSmbConnections() {
     smbConnectionListEl.appendChild(row);
   }
   updateButtons();
+}
+
+function showStorageError(key, error) {
+  const reason = backendErrorText(error.code, isPlayStationBrowser() ? "" : error.detail, error.message)
+    .replace(/[:：]\s*$/, "");
+  alert(t(key, { error: reason }));
 }
 
 function openSmbManager() {
@@ -1022,12 +1046,14 @@ async function removeSmbConnection(path) {
   try {
     localActionBusy = true;
     setBusy(true);
-    await apiForm("/api/smb/remove", { path: path });
-    forgetSmbPassword(path);
-    if (smbContainsPath(path, cwd)) await load("/", undefined, true, true, "replace");
+    await apiForm("/api/storage/remove", { path: path });
+    if (/^smb:\/\//.test(path)) {
+      forgetSmbPassword(path);
+      if (smbContainsPath(path, cwd)) await load("/", undefined, true, true, "replace");
+    }
     await refreshSpaces();
   } catch (err) {
-    alert(t("smbRemoveFailed", { error: err.message }));
+    showStorageError("smbRemoveFailed", err);
   } finally {
     localActionBusy = false;
     setModalBackgroundLocked(!smbManagerOverlayEl.hidden);
@@ -1064,49 +1090,62 @@ function chooseSmbShare(shares) {
 
 async function addSmbConnection() {
   if (smbManagerBusy()) return;
-  const address = prompt(t("smbAddressPrompt"), "smb://");
-  if (typeof address !== "string") return;
-  const input = address.trim();
-  if (!input || /^smb:\/\/$/i.test(input)) return;
+  let previousInput = "smb://";
+  localActionBusy = true;
+  setBusy(true);
   try {
-    localActionBusy = true;
-    setBusy(true);
-    const authority = /^smb:\/\/([^/]+)(?:\/|$)/.exec(input);
-    let clean = input;
-    let password = "";
-    if (authority && authority[1].indexOf("@") >= 0) {
-      const at = authority[1].lastIndexOf("@");
-      const credentials = authority[1].slice(0, at);
-      const colon = credentials.indexOf(":");
-      password = colon >= 0 ? decodeURIComponent(credentials.slice(colon + 1)) : askSmbPassword(input);
-      if (colon >= 0) clean = input.replace(authority[1], credentials.slice(0, colon) + "@" + authority[1].slice(at + 1));
-    }
-    if (/^smb:\/\/[^/]+\/?$/.test(clean)) {
-      let listing;
+    while (true) {
+      const address = prompt(t("smbAddressPrompt"), previousInput);
+      if (typeof address !== "string") return;
+      const input = address.trim();
+      // Do not resubmit the same failed input when the native dialog closes.
+      if (!input || /^smb:\/\/$/i.test(input) || input === previousInput.trim()) return;
+      previousInput = address;
       try {
-        listing = await apiForm("/api/smb/shares", { address: clean, password: password });
+        const authority = /^smb:\/\/([^/]+)(?:\/|$)/.exec(input);
+        let clean = input;
+        let password = "";
+        if (authority && authority[1].indexOf("@") >= 0) {
+          const at = authority[1].lastIndexOf("@");
+          const credentials = authority[1].slice(0, at);
+          const colon = credentials.indexOf(":");
+          password = colon >= 0 ? decodeURIComponent(credentials.slice(colon + 1)) : askSmbPassword(input);
+          if (colon >= 0) clean = input.replace(authority[1], credentials.slice(0, colon) + "@" + authority[1].slice(at + 1));
+        }
+        if (/^smb:\/\/[^/]+\/?$/.test(clean)) {
+          let listing;
+          try {
+            listing = await apiForm("/api/smb/shares", { address: clean, password: password });
+          } catch (err) {
+            if (password || err.code !== "smb_password_required") throw err;
+            password = askSmbPassword(clean);
+            listing = await apiForm("/api/smb/shares", { address: clean, password: password });
+          }
+          if (!listing.shares.length) throw new Error(t("smbNoShares"));
+          const share = await chooseSmbShare(listing.shares);
+          if (share === null) return;
+          clean = clean.replace(/\/$/, "") + "/" + share;
+        }
+        const data = await apiForm("/api/storage/add", { address: clean, password: password });
+        if (/^smb:\/\//.test(data.path)) {
+          saveSmbPassword(data, password);
+          smbReady[data.path] = Promise.resolve();
+        }
+        await refreshSpaces();
+        if (!await load(data.path, undefined, true, true, "seed")) continue;
+        smbManagerOverlayEl.hidden = true;
+        return;
       } catch (err) {
-        if (password || err.code !== "smb_password_required") throw err;
-        password = askSmbPassword(clean);
-        listing = await apiForm("/api/smb/shares", { address: clean, password: password });
+        if (err.code === "smb_password_canceled") return;
+        if (err instanceof URIError) err.code = "storage_path_invalid";
+        showStorageError(/^smb:\/\//.test(input) ? "smbConnectFailed" : "storageAddFailed", err);
       }
-      if (!listing.shares.length) throw new Error(t("smbNoShares"));
-      const share = await chooseSmbShare(listing.shares);
-      if (share === null) return;
-      clean = clean.replace(/\/$/, "") + "/" + share;
     }
-    const data = await apiForm("/api/smb/add", { address: clean, password: password });
-    saveSmbPassword(data, password);
-    smbReady[data.path] = Promise.resolve();
-    await refreshSpaces();
-    await load(data.path, undefined, true, true, "seed");
-    smbManagerOverlayEl.hidden = true;
-  } catch (err) {
-    if (err.code !== "smb_password_canceled") alert(t("smbConnectFailed", { error: err.message }));
   } finally {
     localActionBusy = false;
     setModalBackgroundLocked(!smbManagerOverlayEl.hidden);
     setBusy(false);
+    if (!smbManagerOverlayEl.hidden) renderSmbConnections();
     if (smbManagerOverlayEl.hidden) manageSmbBtn.focus();
     else smbManagerAddBtn.focus();
   }
@@ -1117,7 +1156,7 @@ function updateSpecialStoragePaths(spaces) {
   let hasMnt = false;
   for (let i = 0; i < spaces.length; i++) {
     const path = spaces[i].path || "";
-    if (/^\/mnt\/(?:usb|ext)[0-9]+$/.test(path)) {
+    if (!spaces[i].custom && /^\/mnt\/(?:usb|ext)[0-9]+$/.test(path)) {
       next[path] = true;
       hasMnt = true;
     }

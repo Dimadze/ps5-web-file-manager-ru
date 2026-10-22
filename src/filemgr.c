@@ -1957,12 +1957,12 @@ filemgr_api_request(struct MHD_Connection *conn, const char *url,
       send_json_error(conn, MHD_HTTP_METHOD_NOT_ALLOWED, "invalid method") :
       api_smb_shares(conn, body, body_size);
   }
-  if(!strcmp(url, "/api/smb/add") || !strcmp(url, "/api/smb/connect")) {
+  if(!strcmp(url, "/api/storage/add") || !strcmp(url, "/api/smb/add") || !strcmp(url, "/api/smb/connect")) {
     return strcmp(method, MHD_HTTP_METHOD_POST) ?
       send_json_error(conn, MHD_HTTP_METHOD_NOT_ALLOWED, "invalid method") :
       api_smb_add(conn, body, body_size, !strcmp(url, "/api/smb/connect"));
   }
-  if(!strcmp(url, "/api/smb/remove")) {
+  if(!strcmp(url, "/api/storage/remove") || !strcmp(url, "/api/smb/remove")) {
     return strcmp(method, MHD_HTTP_METHOD_POST) ?
       send_json_error(conn, MHD_HTTP_METHOD_NOT_ALLOWED, "invalid method") :
       api_smb_remove(conn, body, body_size);

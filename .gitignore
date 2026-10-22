@@ -3,7 +3,7 @@ gen/
 web-file-mgr-linux
 *.o
 *.d
-.build-smb2/
+.*
 tools/
 test/
 tests/

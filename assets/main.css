@@ -95,6 +95,8 @@ body {
 }
 
 .space-info {
+  position: relative;
+  align-self: stretch;
   min-width: 0;
   height: auto;
   min-height: 0;
@@ -114,7 +116,8 @@ body {
 
 .top-right .space-add {
   flex: 0 0 auto;
-  height: 30px;
+  align-self: stretch;
+  height: auto;
   min-height: 30px;
   min-width: 0;
   margin-right: 14px;
@@ -130,10 +133,12 @@ body {
   width: 360px;
   height: auto;
   min-height: 0;
+  align-self: stretch;
+  align-items: center;
   min-width: 0;
-  margin-left: 14px;
+  margin-left: 0;
   padding: 2px 6px;
-  border: 1px solid #2d343d;
+  border: 1px solid #3b4551;
   border-radius: 3px;
   background: #1b2026;
   color: inherit;
@@ -141,9 +146,32 @@ body {
   line-height: inherit;
   text-align: left;
   cursor: pointer;
-  max-width: calc(100% - 50px);
+  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
+  text-indent: -9999px;
+}
+
+.space-info .space-select option {
+  text-indent: 0;
+}
+
+.space-value {
+  position: absolute;
+  top: 0;
+  right: 26px;
+  bottom: 0;
+  left: 7px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  text-align: left;
+}
+
+.space-select:hover:not(:disabled) + .space-value,
+.space-select:focus:not(:disabled) + .space-value {
+  color: #fff;
 }
 
 .space-info .space-select:hover:not(:disabled),
@@ -162,11 +190,6 @@ body {
   color: inherit;
   cursor: default;
   pointer-events: none;
-}
-
-.space-prefix {
-  color: #8f9aa5;
-  flex: 0 0 auto;
 }
 
 .icon-button {
@@ -1079,6 +1102,7 @@ input[type="checkbox"] {
   overflow-y: auto;
   min-height: 0;
   margin: 20px 0;
+  padding: 0 12px;
 }
 
 .smb-connection-row {
@@ -1608,15 +1632,11 @@ input[type="checkbox"] {
     line-height: 24px;
   }
 
-  .space-prefix {
-    text-align: left;
-  }
-
   .space-info .space-select {
     flex: 1 1 auto;
     width: 360px;
     max-width: 100%;
-    margin-left: 8px;
+    margin-left: 0;
   }
 
   .path {
