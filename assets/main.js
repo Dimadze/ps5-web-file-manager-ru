@@ -14,10 +14,8 @@ let hoverResumeTimer = 0;
 let hoveredRow = null;
 let loadingPath = null;
 let directoryLoadingTimer = 0;
-let directoryLoadingStartedAt = 0;
 let taskOverlayTimer = 0;
 let lastCompletionId = null;
-let taskPollFailedAlertShown = false;
 let taskPollPromise = null;
 let localActionBusy = false;
 let modalBackgroundLocked = false;
@@ -68,6 +66,7 @@ const contentLoadingTextEl = contentLoadingEl.querySelector(".content-loading-te
 const emptyEl = document.getElementById("empty");
 const pathEl = document.getElementById("path");
 const spaceInfoEl = document.getElementById("spaceInfo");
+let spaceTextContext = null;
 const manageSmbBtn = document.getElementById("manageSmbBtn");
 const smbManagerOverlayEl = document.getElementById("smbManagerOverlay");
 const smbConnectionListEl = document.getElementById("smbConnectionList");
@@ -81,6 +80,10 @@ let smbConnections = [];
 let storagePaths = [];
 const statusEl = document.getElementById("statusText");
 const versionEl = document.getElementById("versionText");
+const aboutOverlayEl = document.getElementById("aboutOverlay");
+const aboutTitleEl = document.getElementById("aboutTitle");
+const aboutContentEl = document.getElementById("aboutContent");
+const aboutCloseBtn = document.getElementById("aboutCloseBtn");
 const nameFilterBtn = document.getElementById("nameFilterBtn");
 const nameFilterTextEl = document.getElementById("nameFilterText");
 const tasksEl = document.getElementById("tasks");
@@ -245,27 +248,15 @@ function showContentLoading(text) {
 
 function startContentLoadingTimer() {
   if (!contentLoadingEl.hidden || directoryLoadingTimer) return;
-  directoryLoadingStartedAt = Date.now();
   directoryLoadingTimer = setTimeout(() => {
     directoryLoadingTimer = 0;
     showContentLoading();
   }, LOADING_DISPLAY_DELAY);
 }
 
-async function showContentLoadingAfterDelay() {
-  if (!contentLoadingEl.hidden) return;
-  const elapsed = directoryLoadingStartedAt ? Date.now() - directoryLoadingStartedAt : 0;
-  const remaining = LOADING_DISPLAY_DELAY - elapsed;
-  if (remaining > 0) await delay(remaining);
-  clearTimeout(directoryLoadingTimer);
-  directoryLoadingTimer = 0;
-  showContentLoading();
-}
-
 function hideContentLoading() {
   clearTimeout(directoryLoadingTimer);
   directoryLoadingTimer = 0;
-  directoryLoadingStartedAt = 0;
   contentEl.classList.toggle("loading", modalBackgroundLocked);
   contentLoadingEl.hidden = true;
   updateButtons();
@@ -714,9 +705,9 @@ function writeHistoryPath(path, replace) {
 
 function pathHistoryChain(path) {
   const clean = String(path || "/").replace(/\/+$/, "") || "/";
-  if (/^smb:\/\//.test(clean)) {
+  if (isSmbPath(clean)) {
     const segments = clean.slice(6).split("/");
-    const chain = ["/"];
+    const chain = [];
     let current = "smb://" + segments[0];
     for (let i = 1; i < segments.length; i++) {
       current += "/" + segments[i];
@@ -738,8 +729,11 @@ function pathHistoryChain(path) {
 function seedHistoryPath(path) {
   if (!window.history || !history.pushState || !history.replaceState) return;
   const chain = pathHistoryChain(path);
-  for (let i = 0; i < chain.length; i++) {
-    writeHistoryPath(chain[i], i === 0);
+  writeHistoryPath(chain[0], true);
+  // Keep one same-page Back entry at the share root, including after a reload.
+  if (isSmbPath(chain[0])) history.pushState({ path: chain[0] }, "", "#" + encodeURIComponent(chain[0]));
+  for (let i = 1; i < chain.length; i++) {
+    writeHistoryPath(chain[i], false);
   }
 }
 
@@ -749,7 +743,7 @@ function historyBlocked() {
     !contentLoadingEl.hidden || contentEl.classList.contains("loading") ||
     !textEditorOverlayEl.hidden || !imagePreviewOverlayEl.hidden ||
     !pkgInfoOverlayEl.hidden || !permissionOverlayEl.hidden ||
-    !extractOverlayEl.hidden);
+    !extractOverlayEl.hidden || !aboutOverlayEl.hidden);
 }
 
 function savePath(path) {
@@ -785,7 +779,8 @@ function fitSpaceOptions() {
   const select = document.getElementById("spaceSelect");
   if (!select || !select.clientWidth) return;
   const style = getComputedStyle(select);
-  const context = document.createElement("canvas").getContext("2d");
+  if (!spaceTextContext) spaceTextContext = document.createElement("canvas").getContext("2d");
+  const context = spaceTextContext;
   context.font = style.font || style.fontSize + " " + style.fontFamily;
   // Let very narrow headers wrap the controls rather than clip capacity text.
   if (window.innerWidth <= 640) {
@@ -828,17 +823,17 @@ function fitSpaceOptions() {
 async function refreshSpaces() {
   try {
     const data = await api("/api/space", { path: cwd });
+    const spaces = data.spaces || [];
     const previousConnections = smbConnections;
-    smbConnections = (data.spaces || []).filter(item => /^smb:\/\//.test(item.path || ""));
-    storagePaths = (data.spaces || []).filter(item => item.custom || /^smb:\/\//.test(item.path || ""));
+    storagePaths = spaces.filter(item => item.custom || isSmbPath(item.path));
+    smbConnections = storagePaths.filter(item => isSmbPath(item.path));
     for (const previous of previousConnections) {
       const next = smbConnections.find(item => item.path === previous.path);
       if (!next) forgetSmbPassword(previous.path);
       else if (next.user !== previous.user || next.domain !== previous.domain) delete smbReady[previous.path];
     }
     if (!smbManagerOverlayEl.hidden && !localActionBusy) renderSmbConnections();
-    updateSpecialStoragePaths(data.spaces || []);
-    spaceInfoEl.innerHTML = "";
+    updateSpecialStoragePaths(spaces);
     const select = document.createElement("select");
     select.id = "spaceSelect";
     select.className = "space-select";
@@ -846,10 +841,10 @@ async function refreshSpaces() {
     select.disabled = spaceNavigationLocked();
     let currentIndex = -1;
     let internalIndex = -1;
-    for (const item of data.spaces || []) {
+    for (const item of spaces) {
       const option = document.createElement("option");
       option.value = item.path || "";
-      const remote = /^smb:\/\//.test(item.path || "");
+      const remote = isSmbPath(item.path);
       const name = remote ? displayPath(item.path.replace(/\/+$/, "").split("/").pop()) :
         item.label_key ? t(item.label_key) : displayPath(item.path || item.label);
       const label = remote ? "SMB " + name : name;
@@ -889,6 +884,7 @@ async function refreshSpaces() {
       if (!ok) select.selectedIndex = currentIndex;
       fitSpaceOptions();
     });
+    spaceInfoEl.innerHTML = "";
     if (select.options.length) {
       spaceInfoEl.appendChild(select);
       const value = document.createElement("span");
@@ -966,12 +962,12 @@ async function ensureSmbPaths(values) {
   const paths = [];
   for (const key of Object.keys(values || {})) {
     const value = values[key];
-    if (typeof value === "string") paths.push.apply(paths, value.split("\n").filter(path => /^smb:\/\//.test(path)));
+    if (typeof value === "string") paths.push.apply(paths, value.split("\n").filter(isSmbPath));
   }
   if (!paths.length) return;
   if (!smbConnections.length) {
     const data = await api("/api/space");
-    smbConnections = (data.spaces || []).filter(item => /^smb:\/\//.test(item.path || ""));
+    smbConnections = (data.spaces || []).filter(item => isSmbPath(item.path));
   }
   for (const path of paths) {
     const item = smbConnections.filter(item => smbContainsPath(item.path, path))
@@ -981,6 +977,10 @@ async function ensureSmbPaths(values) {
     try { await smbReady[item.path]; }
     catch (err) { delete smbReady[item.path]; throw err; }
   }
+}
+
+function isSmbPath(path) {
+  return /^smb:\/\//.test(path);
 }
 
 function smbContainsPath(root, path) {
@@ -1006,7 +1006,7 @@ function renderSmbConnections() {
     remove.type = "button";
     remove.className = "danger";
     remove.textContent = t("removeSmb");
-    remove.setAttribute("aria-label", t("removeSmb") + " " + displayPath(item.path));
+    remove.setAttribute("aria-label", remove.textContent + " " + path.textContent);
     remove.addEventListener("click", () => removeSmbConnection(item.path));
     row.appendChild(remove);
     smbConnectionListEl.appendChild(row);
@@ -1047,7 +1047,7 @@ async function removeSmbConnection(path) {
     localActionBusy = true;
     setBusy(true);
     await apiForm("/api/storage/remove", { path: path });
-    if (/^smb:\/\//.test(path)) {
+    if (isSmbPath(path)) {
       forgetSmbPassword(path);
       if (smbContainsPath(path, cwd)) await load("/", undefined, true, true, "replace");
     }
@@ -1127,7 +1127,7 @@ async function addSmbConnection() {
           clean = clean.replace(/\/$/, "") + "/" + share;
         }
         const data = await apiForm("/api/storage/add", { address: clean, password: password });
-        if (/^smb:\/\//.test(data.path)) {
+        if (isSmbPath(data.path)) {
           saveSmbPassword(data, password);
           smbReady[data.path] = Promise.resolve();
         }
@@ -1138,7 +1138,7 @@ async function addSmbConnection() {
       } catch (err) {
         if (err.code === "smb_password_canceled") return;
         if (err instanceof URIError) err.code = "storage_path_invalid";
-        showStorageError(/^smb:\/\//.test(input) ? "smbConnectFailed" : "storageAddFailed", err);
+        showStorageError(isSmbPath(input) ? "smbConnectFailed" : "storageAddFailed", err);
       }
     }
   } finally {
@@ -1290,6 +1290,12 @@ function closeImagePreview() {
   imagePreviewNameEl.title = "";
   imagePreviewEl.removeAttribute("src");
   setModalBackgroundLocked(false);
+}
+
+function closeAbout() {
+  aboutOverlayEl.hidden = true;
+  setModalBackgroundLocked(false);
+  versionEl.focus();
 }
 
 function addPkgInfoRow(name, value) {
@@ -1933,12 +1939,12 @@ function updateButtons() {
   document.getElementById("mkdirBtn").disabled = locked;
   newTextBtn.disabled = locked;
   for (const button of filesEl.querySelectorAll(".row-action, .mode-action, .row-tool")) {
-    button.disabled = locked || (/^smb:\/\//.test(cwd) && button.classList.contains("mode-action"));
+    button.disabled = locked || (isSmbPath(cwd) && button.classList.contains("mode-action"));
   }
   for (const checkbox of filesEl.querySelectorAll(".select-cell input")) checkbox.disabled = locked;
   selectAllEl.disabled = locked;
   nameFilterBtn.disabled = locked;
-  parentBtn.disabled = locked || cwd === "/";
+  parentBtn.disabled = locked || parentPath(cwd) === cwd;
   exitBtn.disabled = locked;
   const visibleCount = visibleEntries().length;
   selectAllEl.checked = visibleCount > 0 && items.length === visibleCount;
@@ -2089,10 +2095,7 @@ function runRowAction(item, action) {
 
 function render() {
   hoveredRow = null;
-  filesEl.innerHTML = "";
   const visible = visibleEntries();
-  emptyEl.hidden = visible.length !== 0;
-  emptyEl.textContent = entries.length ? t("noMatches") : t("empty");
   const fragment = document.createDocumentFragment();
   const actions = Object.keys(FILE_ACTIONS).filter(op => op !== "download" || !isPlayStationBrowser());
 
@@ -2160,7 +2163,7 @@ function render() {
     const modeBtn = document.createElement("button");
     modeBtn.className = "mode-action";
     modeBtn.type = "button";
-    const remote = /^smb:\/\//.test(item.path);
+    const remote = isSmbPath(item.path);
     modeBtn.textContent = remote ? "—" : permissionModeText(item.mode);
     modeBtn.title = remote ? t("smbPermissions") : t("permissionChangeTitle", { name: displayName(item) });
     modeBtn.setAttribute("aria-label", modeBtn.title);
@@ -2184,13 +2187,16 @@ function render() {
     );
     fragment.appendChild(tr);
   }
+  filesEl.innerHTML = "";
   filesEl.appendChild(fragment);
+  emptyEl.hidden = visible.length !== 0;
+  emptyEl.textContent = entries.length ? t("noMatches") : t("empty");
   updateButtons();
 }
 
 function parentPath(path) {
   if (path === "/") return "/";
-  if (/^smb:\/\/[^/]+\/[^/]+\/?$/.test(path)) return "/";
+  if (/^smb:\/\/[^/]+\/[^/]+\/?$/.test(path)) return path;
   const parts = path.replace(/\/+$/, "").split("/");
   parts.pop();
   return parts.join("/") || "/";
@@ -2201,7 +2207,7 @@ function actionParentDirectory(event) {
     event.preventDefault();
     event.stopPropagation();
   }
-  if (busy || loadingPath || cwd === "/") return;
+  if (busy || loadingPath || parentPath(cwd) === cwd) return;
   if (window.history && history.back && historyPath() === cwd) {
     history.back();
   } else {
@@ -2231,9 +2237,6 @@ async function load(path, scrollTop, force, alertOnError, historyMode) {
   try {
     setStatus(t("readDir"));
     const data = await api("/api/list", { path });
-    if (contentLoadingEl.hidden && data.entries && data.entries.length > 80) {
-      await showContentLoadingAfterDelay();
-    }
     if (!contentLoadingEl.hidden) await nextPaint();
     if (cwd !== data.path && nameFilter) {
       nameFilter = "";
@@ -2623,7 +2626,6 @@ async function pollTasksOnce() {
       setTimeout(pollTasks, 0);
       return;
     }
-    taskPollFailedAlertShown = false;
     const tasks = data.tasks || [];
     const fileTasks = tasks.filter(task => task.op !== "pkg_install");
     const completion = data.completion;
@@ -3069,9 +3071,10 @@ uploadFolderEl.addEventListener("change", () => uploadFiles(uploadFolderEl.files
 if (!isPlayStationBrowser()) setupDropUpload();
 exitBtn.addEventListener("click", actionExit);
 versionEl.addEventListener("click", () => {
-  alert(`PS5 Web File Manager ${APP_VERSION}
-
-A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.
+  if (backgroundInteractionLocked()) return;
+  setModalBackgroundLocked(true);
+  aboutTitleEl.textContent = "PS5 Web File Manager " + APP_VERSION;
+  aboutContentEl.textContent = `A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.
 
 Credits:
 ps5-payload-dev/websrv, ps5-payload-dev/ftpsrv,
@@ -3080,8 +3083,12 @@ itsPLK/ps5-pkg-manager, libmicrohttpd, libsmb2,
 ps5-payload-dev/sdk, etaHEN, ezremote.
 
 License:
-GPLv3 or later. Third-party licenses apply; libmicrohttpd and libsmb2 are LGPL.`);
+GPLv3 or later. Third-party licenses apply; libmicrohttpd and libsmb2 are LGPL.`;
+  aboutOverlayEl.hidden = false;
+  aboutContentEl.scrollTop = 0;
+  aboutCloseBtn.focus();
 });
+aboutCloseBtn.addEventListener("click", closeAbout);
 parentBtn.addEventListener("click", actionParentDirectory);
 nameFilterBtn.addEventListener("click", event => {
   event.stopPropagation();
@@ -3117,9 +3124,6 @@ document.getElementById("smbShareConnectBtn").addEventListener("click", () => {
 document.getElementById("smbShareCancelBtn").addEventListener("click", () => {
   if (smbShareChoice) smbShareChoice(null);
 });
-smbManagerOverlayEl.addEventListener("click", event => {
-  if (event.target === smbManagerOverlayEl) closeSmbManager();
-});
 permissionCancelBtn.addEventListener("click", requestClosePermissionDialog);
 permissionApplyBtn.addEventListener("click", applyPermissionMode);
 extractCancelBtn.addEventListener("click", closeExtractDialog);
@@ -3144,8 +3148,17 @@ window.addEventListener("beforeunload", event => {
   event.returnValue = "";
 });
 window.addEventListener("popstate", event => {
+  const path = event.state && event.state.path ? event.state.path : historyPath();
+  const smbRoot = isSmbPath(cwd) ? pathHistoryChain(cwd)[0] : "";
+  const holdSmbRoot = smbRoot && (!path || !smbContainsPath(smbRoot, path) ||
+    (parentPath(cwd) === cwd && parentPath(path) === path));
+  if (holdSmbRoot) history.pushState({ path: cwd }, "", "#" + encodeURIComponent(cwd));
   if (historyBlocked()) {
     writeHistoryPath(cwd, false);
+    if (!aboutOverlayEl.hidden) {
+      closeAbout();
+      return;
+    }
     if (!textEditorOverlayEl.hidden) {
       requestCloseTextEditor();
       return;
@@ -3165,7 +3178,7 @@ window.addEventListener("popstate", event => {
     setStatus(t("activeTask"));
     return;
   }
-  const path = event.state && event.state.path ? event.state.path : historyPath();
+  if (holdSmbRoot) return;
   if (path && path !== cwd) {
     const revealPath = parentPath(cwd) === path ? cwd : "";
     loadAndReveal(path, false, false, true, null, revealPath);
@@ -3183,17 +3196,18 @@ document.addEventListener("keydown", event => {
       (event.keyCode >= 37 && event.keyCode <= 40)) {
     document.body.classList.add("keyboard-navigation");
   }
-  if (!smbManagerOverlayEl.hidden && (event.key === "Tab" || event.keyCode === 9)) {
-    const buttons = Array.from(smbManagerOverlayEl.querySelectorAll("select, button:not(:disabled)"))
+  const tabOverlay = !aboutOverlayEl.hidden ? aboutOverlayEl : !smbManagerOverlayEl.hidden ? smbManagerOverlayEl : null;
+  if (tabOverlay && (event.key === "Tab" || event.keyCode === 9)) {
+    const buttons = Array.from(tabOverlay.querySelectorAll("select, button:not(:disabled)"))
       .filter(button => button.offsetParent !== null);
     if (!buttons.length) { event.preventDefault(); return; }
     const first = buttons[0];
     const last = buttons[buttons.length - 1];
-    if (event.shiftKey && (document.activeElement === first || !smbManagerOverlayEl.contains(document.activeElement))) {
+    if (event.shiftKey && (document.activeElement === first || !tabOverlay.contains(document.activeElement))) {
       first.blur();
       last.focus();
       event.preventDefault();
-    } else if (!event.shiftKey && (document.activeElement === last || !smbManagerOverlayEl.contains(document.activeElement))) {
+    } else if (!event.shiftKey && (document.activeElement === last || !tabOverlay.contains(document.activeElement))) {
       first.focus();
       event.preventDefault();
     }
@@ -3201,7 +3215,8 @@ document.addEventListener("keydown", event => {
   }
   if (event.key !== "Escape" && event.keyCode !== 27) return;
   let handled = true;
-  if (!smbManagerOverlayEl.hidden) closeSmbManager();
+  if (!aboutOverlayEl.hidden) closeAbout();
+  else if (!smbManagerOverlayEl.hidden) closeSmbManager();
   else if (!extractOverlayEl.hidden) closeExtractDialog();
   else if (!permissionOverlayEl.hidden) requestClosePermissionDialog();
   else if (!pkgInfoOverlayEl.hidden) closePkgInfo();
@@ -3219,21 +3234,19 @@ document.querySelector("thead").addEventListener("click", event => {
   while (target && target.tagName !== "TH") target = target.parentNode;
   if (target && target.getAttribute("data-sort")) setSort(target.getAttribute("data-sort"));
 });
-textEditorOverlayEl.addEventListener("click", event => {
-  if (event.target === textEditorOverlayEl) requestCloseTextEditor();
-});
-imagePreviewOverlayEl.addEventListener("click", event => {
-  if (event.target === imagePreviewOverlayEl) closeImagePreview();
-});
-pkgInfoOverlayEl.addEventListener("click", event => {
-  if (event.target === pkgInfoOverlayEl) closePkgInfo();
-});
-permissionOverlayEl.addEventListener("click", event => {
-  if (event.target === permissionOverlayEl) requestClosePermissionDialog();
-});
-extractOverlayEl.addEventListener("click", event => {
-  if (event.target === extractOverlayEl) closeExtractDialog();
-});
+for (const [overlay, close] of [
+  [aboutOverlayEl, closeAbout],
+  [smbManagerOverlayEl, closeSmbManager],
+  [textEditorOverlayEl, requestCloseTextEditor],
+  [imagePreviewOverlayEl, closeImagePreview],
+  [pkgInfoOverlayEl, closePkgInfo],
+  [permissionOverlayEl, requestClosePermissionDialog],
+  [extractOverlayEl, closeExtractDialog]
+]) {
+  overlay.addEventListener("click", event => {
+    if (event.target === overlay) close();
+  });
+}
 document.querySelector(".shell").addEventListener("click", event => {
   if (!backgroundInteractionLocked()) return;
   event.preventDefault();

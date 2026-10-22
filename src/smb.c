@@ -46,6 +46,7 @@ static int config_error;
 static char client_error[512];
 static uint32_t client_status;
 static int refreshing_spaces;
+enum { CONFIG_MIGRATE_SMB = 1, CONFIG_MIGRATE_CUSTOM = 2 };
 
 int smb_path(const char *path) { return path && !strncmp(path, "smb://", 6); }
 void smb_lock(void) { pthread_mutex_lock(&client_mutex); }
@@ -58,6 +59,13 @@ int smb_path_current(const char *current, const char *root) {
   size_t len = strlen(root);
   return current && !strncmp(current, root, len) &&
     (!current[len] || current[len] == '/');
+}
+
+static size_t connection_index(const char *path) {
+  size_t index;
+  for(index = 0; index < connection_count; index++)
+    if(!strcmp(connections[index].address.path, path)) break;
+  return index;
 }
 
 static int copy_field(char *out, size_t size, const char *in, size_t len) {
@@ -168,8 +176,9 @@ static void load_config_file(const char *name, int custom, int *migrate) {
     if(!line[0] || line[0] == '#') continue;
     for(size_t i = 0; i < 3; i++) fields[i] = strsep(&p, "\t");
     int local = fields[0][0] == '/';
-    if(p) *migrate |= 1; /* Discard passwords from the old four-column format. */
-    if(local && !custom) *migrate |= 2; /* Split paths saved by the interim mixed format. */
+    if(p) *migrate |= CONFIG_MIGRATE_SMB; /* Discard passwords from the old four-column format. */
+    /* Split local paths saved by the interim mixed format. */
+    if(local && !custom) *migrate |= CONFIG_MIGRATE_SMB | CONFIG_MIGRATE_CUSTOM;
     smb_address_t a;
     if((custom && !local) || (!local && !fields[2]) || (p && strchr(p, '\t')) ||
        (local && ((fields[1] && fields[1][0]) || (fields[2] && fields[2][0]))) ||
@@ -178,13 +187,13 @@ static void load_config_file(const char *name, int custom, int *migrate) {
                    copy_field(a.domain, sizeof(a.domain), fields[2], strlen(fields[2]))))) {
       config_error = EINVAL; break;
     }
-    if(local && strcmp(fields[0], a.path)) *migrate |= 4;
-    if(local && builtin_local_path(a.path)) { *migrate |= 4; continue; }
+    if(local && strcmp(fields[0], a.path)) *migrate |= CONFIG_MIGRATE_CUSTOM;
+    if(local && builtin_local_path(a.path)) { *migrate |= CONFIG_MIGRATE_CUSTOM; continue; }
     memset(a.password, 0, sizeof(a.password));
-    size_t i;
-    for(i = 0; i < connection_count; i++)
-      if(!strcmp(connections[i].address.path, a.path)) break;
-    if(i < connection_count) { if(local) *migrate |= 4; continue; }
+    if(connection_index(a.path) < connection_count) {
+      if(local) *migrate |= CONFIG_MIGRATE_CUSTOM;
+      continue;
+    }
     if(connection_count == SMB_CONNECTION_MAX) { config_error = EINVAL; break; }
     connections[connection_count++] = (saved_smb_t){.address = a, .available = -1};
   }
@@ -198,8 +207,8 @@ static void load_config(void) {
   load_config_file("smb.conf", 0, &migrate);
   if(!config_error) load_config_file("custom.conf", 1, &migrate);
   /* Write migrated local paths first; leave smb.conf intact if that fails. */
-  if(!config_error && (migrate & 6) && save_config(1)) config_error = errno;
-  if(!config_error && (migrate & 3) && save_config(0)) config_error = errno;
+  if(!config_error && (migrate & CONFIG_MIGRATE_CUSTOM) && save_config(1)) config_error = errno;
+  if(!config_error && (migrate & CONFIG_MIGRATE_SMB) && save_config(0)) config_error = errno;
 }
 
 static int ensure_config_dir(void) {
@@ -470,13 +479,12 @@ enum MHD_Result api_smb_add(struct MHD_Connection *conn, const char *body, size_
   }
   pthread_once(&config_once, load_config);
   if(connecting) {
-    int found = 0;
     pthread_mutex_lock(&config_mutex);
-    for(size_t i = 0; i < connection_count; i++) {
-      if(strcmp(connections[i].address.path, a.path)) continue;
-      strcpy(a.user, connections[i].address.user);
-      strcpy(a.domain, connections[i].address.domain);
-      found = 1; break;
+    size_t index = connection_index(a.path);
+    int found = index < connection_count;
+    if(found) {
+      strcpy(a.user, connections[index].address.user);
+      strcpy(a.domain, connections[index].address.domain);
     }
     pthread_mutex_unlock(&config_mutex);
     if(!found) { free(password); return send_json_error_detail(conn, MHD_HTTP_NOT_FOUND, "SMB connection not found", "smb_connection_not_found", NULL); }
@@ -529,9 +537,7 @@ enum MHD_Result api_smb_add(struct MHD_Connection *conn, const char *body, size_
     }
   }
   pthread_mutex_lock(&config_mutex);
-  size_t index;
-  for(index = 0; index < connection_count; index++)
-    if(!strcmp(connections[index].address.path, a.path)) break;
+  size_t index = connection_index(a.path);
   if(connecting && (index == connection_count ||
       strcmp(connections[index].address.user, a.user) || strcmp(connections[index].address.domain, a.domain))) {
     pthread_mutex_unlock(&config_mutex);
@@ -575,9 +581,7 @@ enum MHD_Result api_smb_remove(struct MHD_Connection *conn, const char *body, si
     return send_json_error_detail(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, "could not read storage configuration", "storage_config_read_failed", strerror(config_error));
   }
   pthread_mutex_lock(&config_mutex);
-  size_t index;
-  for(index = 0; index < connection_count; index++)
-    if(!strcmp(connections[index].address.path, path)) break;
+  size_t index = connection_index(path);
   free(path);
   int result = 0;
   if(index < connection_count) {
@@ -597,8 +601,7 @@ enum MHD_Result api_smb_remove(struct MHD_Connection *conn, const char *body, si
   return send_buffer(conn, MHD_HTTP_OK, strdup("{\"ok\":true}"), "application/json");
 }
 
-static void *refresh_spaces(void *unused) {
-  (void)unused;
+static void *refresh_spaces(void *current) {
   pthread_mutex_lock(&config_mutex);
   size_t count = connection_count;
   saved_smb_t *snapshot = malloc(count * sizeof(*snapshot));
@@ -606,8 +609,9 @@ static void *refresh_spaces(void *unused) {
   pthread_mutex_unlock(&config_mutex);
   for(size_t i = 0; snapshot && i < count; i++) {
     saved_smb_t *saved = &snapshot[i];
-    if(smb_path(saved->address.path) && !saved->authenticated && strcasecmp(saved->address.user, "Guest") &&
-       strcasecmp(saved->address.user, "anonymous")) continue;
+    if(smb_path(saved->address.path) && (strcmp(saved->address.path, current) ||
+       (!saved->authenticated && strcasecmp(saved->address.user, "Guest") &&
+        strcasecmp(saved->address.user, "anonymous")))) continue;
     if(time(NULL) - saved->checked_at >= 30 && !has_active_task()) {
       if(saved->address.path[0] == '/') {
         local_space(saved);
@@ -639,6 +643,7 @@ static void *refresh_spaces(void *unused) {
     }
   }
   free(snapshot);
+  free(current);
   pthread_mutex_lock(&config_mutex);
   refreshing_spaces = 0;
   pthread_mutex_unlock(&config_mutex);
@@ -656,14 +661,18 @@ void smb_append_spaces(strbuf_t *json, const char *current, int *first) {
       current_length = len;
       current_index = i;
     }
-    if(time(NULL) - connections[i].checked_at >= 30) stale = 1;
+    if(connections[i].address.path[0] == '/' && time(NULL) - connections[i].checked_at >= 30) stale = 1;
   }
+  if(current_index < connection_count && time(NULL) - connections[current_index].checked_at >= 30) stale = 1;
   /* Offline servers must not delay returning the shared disk list. */
   if(stale && !refreshing_spaces) {
     pthread_t thread;
-    refreshing_spaces = 1;
-    if(pthread_create(&thread, NULL, refresh_spaces, NULL)) refreshing_spaces = 0;
-    else pthread_detach(thread);
+    char *path = strdup(current_index < connection_count ? connections[current_index].address.path : "");
+    if(path) {
+      refreshing_spaces = 1;
+      if(pthread_create(&thread, NULL, refresh_spaces, path)) { refreshing_spaces = 0; free(path); }
+      else pthread_detach(thread);
+    }
   }
   for(int local = 0; local <= 1; local++) {
     for(size_t i = 0; i < connection_count; i++) {

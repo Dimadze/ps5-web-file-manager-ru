@@ -1092,17 +1092,29 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
-.smb-manager-panel {
+.smb-manager-panel,
+.about-panel {
   max-height: calc(100vh - 96px);
   display: flex;
   flex-direction: column;
 }
 
 .smb-connection-list {
+  margin: 20px 0;
+}
+
+.smb-connection-list,
+.about-content {
   overflow-y: auto;
   min-height: 0;
-  margin: 20px 0;
   padding: 0 12px;
+}
+
+.about-content {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: #c9d3dc;
+  margin: 20px 0 40px 0;
 }
 
 .smb-connection-row {
@@ -1131,7 +1143,8 @@ input[type="checkbox"] {
   color: #8f9aa5;
 }
 
-.smb-manager-panel .permission-actions {
+.smb-manager-panel .permission-actions,
+.about-panel .permission-actions {
   flex: 0 0 auto;
 }
 
@@ -1630,13 +1643,6 @@ input[type="checkbox"] {
     align-items: center;
     font-size: 14px;
     line-height: 24px;
-  }
-
-  .space-info .space-select {
-    flex: 1 1 auto;
-    width: 360px;
-    max-width: 100%;
-    margin-left: 0;
   }
 
   .path {
