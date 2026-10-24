@@ -40,7 +40,7 @@ let uploadXhr = null;
 let uploadTerminalAbort = false;
 let L = {};
 
-const APP_VERSION = "v1.11b";
+const APP_VERSION = "v1.11с";
 const SMB_PASSWORD_KEY = "ps5-web-file-mgr:smb-password:";
 const smbPasswords = {};
 const smbReady = {};
@@ -151,12 +151,14 @@ const permissionChecks = [
 ];
 
 function chooseLanguage() {
-  const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
-  const lang = String(langs[0] || "").toLowerCase();
-  return lang.indexOf("zh") === 0 ? "zh" : "en";
+  //const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
+  //const lang = String(langs[0] || "").toLowerCase();
+  //return lang.indexOf("zh") === 0 ? "zh" : "en";
+  return "ru";
 }
 
 function loadLanguage() {
+  /*
   return new Promise(resolve => {
     const lang = chooseLanguage();
     initLoadingEl.textContent = lang === "zh" ? "加载中..." : "Loading...";
@@ -165,6 +167,23 @@ function loadLanguage() {
     script.onload = () => {
       L = window.WFM_LANG || {};
       document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      resolve();
+    };
+    script.onerror = () => {
+      L = {};
+      resolve();
+    };
+    document.head.appendChild(script);
+  });
+  */
+   return new Promise(resolve => {
+    const lang = chooseLanguage();
+    initLoadingEl.textContent = "Загрузка...";
+    const script = document.createElement("script");
+    script.src = "/lang-" + lang + ".js";
+    script.onload = () => {
+      L = window.WFM_LANG || {};
+      document.documentElement.lang = "ru";
       resolve();
     };
     script.onerror = () => {

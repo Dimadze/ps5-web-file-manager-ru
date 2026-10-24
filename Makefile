@@ -13,7 +13,7 @@ ifeq ($(MAKECMDGOALS),)
   endif
 endif
 
-VERSION_TAG := v1.11b
+VERSION_TAG := v1.11bRU
 TITLE_ID    := FMGR88888
 PYTHON      ?= python3
 CMAKE       ?= cmake
@@ -23,8 +23,8 @@ HOST_CC     ?= cc
 HOST_STRIP  ?= strip
 HOST_PKG_CONFIG ?= pkg-config
 
-BIN        := web-file-mgr.elf
-LINUX_BIN  := web-file-mgr-linux
+BIN        := web-file-mgr-ru.elf
+LINUX_BIN  := web-file-mgr-ru-linux
 PS5_DEBUG  := $(if $(filter debug,$(MAKECMDGOALS)),1,0)
 PS5_BUILD_DIR := .build-ps5/$(if $(filter debug,$(MAKECMDGOALS)),debug,release)
 PS5_BUILD_BIN := $(PS5_BUILD_DIR)/$(BIN)
