@@ -1,6 +1,7 @@
 window.WFM_LANG = {
   smbLocalOperation: "This operation requires local files and folders. Copy them from SMB to local storage first",
   appTitle: "PS5 Web File Manager",
+  appDescription: "A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.",
   copy: "Copy",
   move: "Move",
   delete: "Delete",

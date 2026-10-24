@@ -1,6 +1,7 @@
 window.WFM_LANG = {
   smbLocalOperation: "此操作需要本地文件和目录，请先从 SMB 复制到本地存储",
   appTitle: "PS5 Web File Manager",
+  appDescription: "A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.",
   copy: "复制",
   move: "移动",
   delete: "删除",

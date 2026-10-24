@@ -38,7 +38,7 @@ let uploadXhr = null;
 let uploadTerminalAbort = false;
 let L = {};
 
-const APP_VERSION = "v1.12";
+const APP_VERSION = "v1.12RU";
 const SMB_PASSWORD_KEY = "ps5-web-file-mgr:smb-password:";
 const smbPasswords = {};
 const smbReady = {};
@@ -157,18 +157,43 @@ const permissionChecks = [
 function chooseLanguage() {
   const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
   const lang = String(langs[0] || "").toLowerCase();
-  return lang.indexOf("zh") === 0 ? "zh" : "en";
+
+    //return lang.indexOf("zh") === 0 ? "zh" : "en";
+  if (lang.indexOf("zh") === 0)
+    return "zh";
+  else if (lang.indexOf("en") === 0)
+    return "en";
+  else if (lang.indexOf("ru") === 0)
+    return "ru";
+  else
+    return "en";
 }
 
 function loadLanguage() {
+  
   return new Promise(resolve => {
     const lang = chooseLanguage();
-    initLoadingEl.textContent = lang === "zh" ? "加载中..." : "Loading...";
+
+    if (lang === "zh")
+       initLoadingEl.textContent = "加载中...";
+    else if (lang === "ru")
+      initLoadingEl.textContent = "Загрузка...";
+    else
+      initLoadingEl.textContent = "Loading...";
+
+    //initLoadingEl.textContent = lang === "zh" ? "加载中..." : "Loading...";
     const script = document.createElement("script");
     script.src = "/lang-" + lang + ".js";
     script.onload = () => {
       L = window.WFM_LANG || {};
-      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+
+    if (lang === "zh")
+       document.documentElement.lang  = "zh-CN";
+    else if (lang === "ru")
+      initLoadingEl.textContent       = "ru";
+    else
+      initLoadingEl.textContent       = "en";   
+
       resolve();
     };
     script.onerror = () => {
@@ -177,6 +202,7 @@ function loadLanguage() {
     };
     document.head.appendChild(script);
   });
+
 }
 
 function t(key, params) {
@@ -3073,8 +3099,11 @@ exitBtn.addEventListener("click", actionExit);
 versionEl.addEventListener("click", () => {
   if (backgroundInteractionLocked()) return;
   setModalBackgroundLocked(true);
-  aboutTitleEl.textContent = "PS5 Web File Manager " + APP_VERSION;
-  aboutContentEl.textContent = `A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.
+  aboutTitleEl.textContent = t("appTitle") + " " + APP_VERSION;
+  //aboutContentEl.textContent = `A file manager for PS5 with a web UI. It is primarily intended for quickly and safely copying game dump folders from USB storage to internal storage.
+  aboutContentEl.textContent = t("appDescription") +
+ 
+`
 
 Credits:
 ps5-payload-dev/websrv, ps5-payload-dev/ftpsrv,
@@ -3083,7 +3112,10 @@ itsPLK/ps5-pkg-manager, libmicrohttpd, libsmb2,
 ps5-payload-dev/sdk, etaHEN, ezremote.
 
 License:
-GPLv3 or later. Third-party licenses apply; libmicrohttpd and libsmb2 are LGPL.`;
+GPLv3 or later. Third-party licenses apply; libmicrohttpd and libsmb2 are LGPL.`
+;
+
+
   aboutOverlayEl.hidden = false;
   aboutContentEl.scrollTop = 0;
   aboutCloseBtn.focus();
