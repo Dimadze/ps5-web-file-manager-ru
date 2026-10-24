@@ -45,7 +45,8 @@
 
 ## Сборка
 
-Сначала требуется PS5 payload SDK: ps5-payload-dev/sdk(https://github.com/ps5-payload-dev/sdk#quick-start)
+Сначала требуется PS5 payload SDK: ps5-payload-dev/sdk
+https://github.com/ps5-payload-dev/sdk#quick-start
 
 ```sh
 export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
