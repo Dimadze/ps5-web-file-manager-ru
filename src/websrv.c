@@ -163,9 +163,26 @@ websrv_on_request(void *cls, struct MHD_Connection *conn, const char *url,
   if(!strcmp(url, "/fs")) {
     return filemgr_fs_request(conn);
   }
+
+  //++
+ 
+  if(!strcmp(url, "/cache.appcache") || !url[0]) {
+    return asset_request(conn, "/cache.appcache");
+  }
+
+  if(!strcmp(url, "/cache.js") || !url[0]) {
+    return asset_request(conn, "/cache.js");
+  }
+
+  //++
+
+
   if(!strcmp(url, "/") || !url[0]) {
     return asset_request(conn, "/index.html");
   }
+
+
+
   if(!strcmp(url, "/favicon.ico")) {
     return asset_request(conn, "/icon0.png");
   }

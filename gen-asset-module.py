@@ -73,6 +73,13 @@ if __name__ == '__main__':
     encoding = None
     with open(args.FILE, mode='rb') as f:
         payload = f.read()
+
+    #cache.appcache
+    if args.FILE.endswith('cache.appcache'):
+        import random
+        stamp = f"v{random.randint(1000, 9999)}".encode('ascii')
+        payload = payload.replace(b'VERSION', stamp)
+
     if mime in GZIP_MIMES:
         zipped = gzip.compress(payload, compresslevel=9, mtime=0)
         if len(zipped) < len(payload):

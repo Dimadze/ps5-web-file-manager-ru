@@ -13,14 +13,14 @@ ifeq ($(MAKECMDGOALS),)
   endif
 endif
 
-VERSION_TAG := v1.12RU
+VERSION_TAG := v1.12RU5
 TITLE_ID    := FMGR88888
 PYTHON      ?= python3
 CMAKE       ?= cmake
 STRIP       ?= $(PS5_PAYLOAD_SDK)/bin/prospero-strip
 PKG_CONFIG  ?= $(PS5_PAYLOAD_SDK)/bin/prospero-pkg-config
 HOST_CC     ?= cc
-HOST_STRIP  ?= strip
+HOST_STRIP  ?= strip 
 HOST_PKG_CONFIG ?= pkg-config
 
 BIN        := web-file-mgr-ru.elf

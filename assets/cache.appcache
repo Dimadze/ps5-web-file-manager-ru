@@ -1,0 +1,9 @@
+CACHE MANIFEST
+# VERSION
+
+CACHE:
+index.html
+cache.js
+
+NETWORK:
+*
