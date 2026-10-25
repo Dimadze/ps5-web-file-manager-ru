@@ -3409,42 +3409,7 @@ function waitServer(interval, timeout) {
   });
 }
 
-function cache() {
-
-  const appCache = window.applicationCache;
-
-
-  const INTERVAL = 500;   // проверять каждые 0.5 сек
-  const TIMEOUT  = 15000; // сдаться через 15 сек
-
-  if (appCache) {
-    appCache.addEventListener('updateready', () => {
-      appCache.swapCache();
-      location.reload();
-    });
-  }
-
-  // Проверяем, отвечает ли основной сервер (тот, что отдал index.html)
-  fetch(location.href, { method: 'HEAD', cache: 'no-store' })
-    .then(() => {
-      // Сервер отвечает — страница загружена из сети, ничего не делаем
-      //document.getElementById('status').textContent = 'Онлайн ✅';
-    })
-    .catch(() => {
-      // Сервер не отвечает — страница из AppCache, делаем fetch к локальному серверу
-      //document.getElementById('status').textContent = 'Офлайн, запрашиваю payload...';
-      return fetch('http://127.0.0.1:9021/data/wfm/web-file-mgr-ru.elf')
-        .then(() => waitForServer(INTERVAL, TIMEOUT))
-        .then(() => location.reload())
-        .catch(err => console.error('Сервер не поднялся:', err));  
-    }
-  );
-
-}
-
-
 init();
-cache();
 setInterval(pollTasks, 1000);
 setInterval(refreshSpaces, 10000);
 
