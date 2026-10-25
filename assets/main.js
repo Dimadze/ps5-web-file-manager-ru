@@ -3389,26 +3389,6 @@ async function init() {
   }
 }
 
-
-
-function waitServer(interval, timeout) {
-  const start = Date.now();
-  return new Promise((resolve, reject) => {
-    const tick = () => {
-      fetch(location.href, { method: 'HEAD', cache: 'no-store' })
-        .then(r => {
-          if (r.ok) return resolve();          // сервер ответил — готов
-          throw new Error('not ready');
-        })
-        .catch(() => {
-          if (Date.now() - start > timeout) return reject(new Error('timeout'));
-          setTimeout(tick, interval);          // ещё не готов — пробуем снова
-        });
-    };
-    tick();
-  });
-}
-
 init();
 setInterval(pollTasks, 1000);
 setInterval(refreshSpaces, 10000);
