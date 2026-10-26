@@ -22,7 +22,7 @@ PS5 web file manager payload. It runs an HTTP UI starting at port `8888`, regist
 
 ## Features
 
--Launch from a menu shortcut is implemented through AppCache; beforehand, the ELF needs to be put into /data/wfm/web-file-mgr-ru.elf.
+- Launch from a menu shortcut is implemented through AppCache; beforehand, the ELF needs to be put into /data/wfm/web-file-mgr-ru.elf.
 - List files and folders.
 - Sort the list by name, type, size, modified time, or permissions. The selected sort mode is saved in browser local storage.
 - Change read/write/execute permissions from the permissions column, using checkboxes or a validated four-digit octal mode.
