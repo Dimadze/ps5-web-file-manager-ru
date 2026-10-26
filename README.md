@@ -1,4 +1,4 @@
-**English** | [Русский](README.md)
+**Русский** | [English](README_EN.md)
 
 # PS5 Файловый менеджер
 

@@ -1,4 +1,4 @@
-**Русский** | [English](README_EN.md)
+**English** | [Русский](README.md)
 
 # PS5 Web File Manager
 
