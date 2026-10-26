@@ -3,6 +3,7 @@ CACHE MANIFEST
 
 CACHE:
 index.html
+main.js
 cache.js
 
 NETWORK:
