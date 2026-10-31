@@ -37,7 +37,7 @@ fetch(location.href, { method: 'HEAD', cache: 'no-store' })
   })
   .catch(() => {
     // Сервер не отвечает — страница из AppCache, запуск ELF
-    return fetch('http://127.0.0.1:9021/data/wfm/web-file-mgr-ru.elf')
+    return fetch('http://127.0.0.1:9021/data/wfm/web-file-mgr.elf')
       .then(() => waitForElfStart(INTERVAL, TIMEOUT))
       .then(() => location.reload())
       .catch(err => console.error('Сервер не поднялся:', err));  
