@@ -12,12 +12,12 @@
 ## Скриншоты
 
 <p>
-  <a href="docs/screenshots/20260617_231827.376.jpg" target="_blank"><img src="docs/screenshots/20260617_231827.376.jpg" width="31%" alt="PS5 Web File Manager screenshot 1"></a>
-  <a href="docs/screenshots/20260619_131432.399.jpg" target="_blank"><img src="docs/screenshots/20260619_131432.399.jpg" width="31%" alt="PS5 Web File Manager screenshot 2"></a>
-  <a href="docs/screenshots/20260617_232348.855.jpg" target="_blank"><img src="docs/screenshots/20260617_232348.855.jpg" width="31%" alt="PS5 Web File Manager screenshot 3"></a>
-  <a href="docs/screenshots/20260619_131811.644.jpg" target="_blank"><img src="docs/screenshots/20260619_131811.644.jpg" width="31%" alt="PS5 Web File Manager screenshot 4"></a>
-  <a href="docs/screenshots/20260619_131535.239.jpg" target="_blank"><img src="docs/screenshots/20260619_131535.239.jpg" width="31%" alt="PS5 Web File Manager screenshot 5"></a>
-  <a href="docs/screenshots/20260620_232728.533.jpg" target="_blank"><img src="docs/screenshots/20260620_232728.533.jpg" width="31%" alt="PS5 Web File Manager screenshot 6"></a>
+  <a href="docs/screenshots/ru1.jpg" target="_blank"><img src="docs/ru1.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 1"></a>
+  <a href="docs/screenshots/ru2.jpg" target="_blank"><img src="docs/ru2.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 2"></a>
+  <a href="docs/screenshots/ru3.jpg" target="_blank"><img src="docs/ru3.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 3"></a>
+  <a href="docs/screenshots/ru4.jpg" target="_blank"><img src="docs/ru4.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 4"></a>
+  <a href="docs/screenshots/ru5.jpg" target="_blank"><img src="docs/ru5.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 5"></a>
+  <a href="docs/screenshots/ru6.jpg" target="_blank"><img src="docs/ru6.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 6"></a>
 </p>
 
 ## Возможности
