@@ -2,7 +2,7 @@ const appCache = window.applicationCache;
 const INTERVAL = 500;   // poll every 0.5 s
 const TIMEOUT  = 15000; // give up after 15 s
 
-function waitForElfStart(interval, timeout) {
+function waitForPayloadStart(interval, timeout) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const tick = () => {
@@ -37,7 +37,7 @@ fetch(location.href, { method: 'HEAD', cache: 'no-store' })
   .catch(() => {
     // The server does not respond: the page came from AppCache, launch the ELF
     return fetch('http://127.0.0.1:9021/data/wfm/web-file-mgr.elf')
-      .then(() => waitForElfStart(INTERVAL, TIMEOUT))
+      .then(() => waitForPayloadStart(INTERVAL, TIMEOUT))
       .then(() => location.reload())
-      .catch(err => console.error('Server did not start:', err));
+      //.catch(err => console.error('Server did not start:', err));
   });
