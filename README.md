@@ -17,6 +17,7 @@
   <a href="docs/screenshots/ru3.jpg" target="_blank"><img src="docs/screenshots/ru3.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 3"></a>
   <a href="docs/screenshots/ru4.jpg" target="_blank"><img src="docs/screenshots/ru4.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 4"></a>
   <a href="docs/screenshots/ru5.jpg" target="_blank"><img src="docs/screenshots/ru5.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 5"></a>
+  <a href="docs/screenshots/ru6.jpg" target="_blank"><img src="docs/screenshots/ru6.jpg" width="31%" alt="PS5 Файл-менеджер Скришот 6S"></a>
 </p>
 
 ## Возможности
